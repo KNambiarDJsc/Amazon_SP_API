@@ -430,3 +430,20 @@ def test_manual_evidence_rows_are_append_only(env, auth):
     assert env.http.get(f"/api/v1/jobs/{job}/checks/{cid}", headers=auth).json()["status"] == (
         "VERIFIED_LISTABLE"
     )
+
+
+def test_the_demo_catalog_includes_a_brand_that_needs_review(engine):
+    """The dashboard demo and its end-to-end test rely on this fixture."""
+    demo = Env()
+    auth = demo.new_seller()[1]
+    job = run(demo, auth, brands=("Acme Audio",))
+    item = queue(demo, auth, job)["items"][0]
+    assert (item["kind"], item["asin"], item["status"]) == (
+        "CHECK",
+        "B0MOCKAA01",
+        "NEEDS_MANUAL_CHECK",
+    )
+
+    check = check_for(demo, auth, job, "B0MOCKAA01")
+    r = submit(demo, auth, job, check, page_asin="B0MOCKAA01")
+    assert r.status_code == 200 and r.json()["status"] == "VERIFIED_LISTABLE"

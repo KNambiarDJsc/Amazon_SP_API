@@ -45,8 +45,19 @@ Condition = Literal[
 ]
 
 
+# Responses always carry their defaulted fields, so the published schema marks them required;
+# otherwise generated clients would treat e.g. `ingestion_report.duplicates` as maybe-missing.
+_OUT = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class Out(BaseModel):
+    model_config = _OUT
+
+
 class ORM(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_serialization_defaults_required=True
+    )
 
 
 # ---- input ---------------------------------------------------------------------------------
@@ -93,7 +104,7 @@ class InvalidRow(BaseModel):
     reason: str
 
 
-class IngestionReport(BaseModel):
+class IngestionReport(Out):
     total_rows: int = 0
     accepted: int = 0
     empty_rows: list[int] = Field(default_factory=list)
@@ -104,7 +115,7 @@ class IngestionReport(BaseModel):
 # ---- output --------------------------------------------------------------------------------
 
 
-class JobProgress(BaseModel):
+class JobProgress(Out):
     brands_total: int = 0
     brands_pending: int = 0
     brands_in_progress: int = 0
@@ -205,13 +216,15 @@ T = TypeVar("T")
 
 
 class Page(BaseModel, Generic[T]):
+    model_config = _OUT
+
     items: list[T]
     total: int
     limit: int
     offset: int
 
 
-class ErrorOut(BaseModel):
+class ErrorOut(Out):
     detail: str
 
 
@@ -246,7 +259,7 @@ class ManualEvidenceIn(BaseModel):
         return v.upper()
 
 
-class ReviewItem(BaseModel):
+class ReviewItem(Out):
     kind: Literal["CHECK", "BRAND"]
     brand_id: uuid.UUID
     brand: str
@@ -264,6 +277,21 @@ class ReviewItem(BaseModel):
 
 class RetryBrandIn(BaseModel):
     rediscover: bool = Field(default=False, description="Search the catalog again from the start")
+
+
+class MeOut(Out):
+    name: str
+    marketplace_id: str
+    amazon_mode: str
+    connected_to_amazon: bool
+
+
+class EventOut(Out):
+    id: int
+    event_type: str
+    job_brand_id: uuid.UUID | None
+    payload: dict[str, Any]
+    created_at: datetime
 
 
 class ExportOut(ORM):

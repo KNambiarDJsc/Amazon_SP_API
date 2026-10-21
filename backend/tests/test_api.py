@@ -224,6 +224,25 @@ def test_check_filters_search_and_pagination(env, auth):
     assert by_title["total"] == 1
 
 
+def test_status_filter_accepts_several_values(env, auth):
+    job_id = run_demo(env, auth)
+    base = f"/api/v1/jobs/{job_id}/checks"
+    counts = env.http.get(f"/api/v1/jobs/{job_id}", headers=auth).json()["progress"]["by_status"]
+
+    both = env.http.get(
+        base,
+        params=[("status", "BRAND_APPROVAL_REQUIRED"), ("status", "VERIFIED_LISTABLE")],
+        headers=auth,
+    ).json()
+    assert both["total"] == counts["BRAND_APPROVAL_REQUIRED"] + counts["VERIFIED_LISTABLE"]
+    assert {c["status"] for c in both["items"]} == {"BRAND_APPROVAL_REQUIRED", "VERIFIED_LISTABLE"}
+
+    bad = env.http.get(
+        base, params=[("status", "VERIFIED_LISTABLE"), ("status", "bogus")], headers=auth
+    )
+    assert bad.status_code == 422
+
+
 def test_search_text_is_literal_not_a_pattern(env, auth):
     job_id = run_demo(env, auth)
     for wildcard in ("%", "_", "%%"):
@@ -268,6 +287,7 @@ def test_audit_events_are_exposed(env, auth):
     events = env.http.get(f"/api/v1/jobs/{job_id}/events", headers=auth).json()
     types = {e["event_type"] for e in events}
     assert {"JOB_CREATED", "BRAND_COMPLETED", "JOB_COMPLETED"} <= types
+    assert all(isinstance(e["payload"], dict) and e["created_at"] for e in events)
 
 
 # ---- lifecycle -------------------------------------------------------------------------------

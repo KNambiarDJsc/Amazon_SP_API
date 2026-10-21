@@ -251,7 +251,9 @@ def reads(args):
     for name, call in cases:
         observability._db_collector._cached = None
         stmts = count_statements(engine, call)
-        p50, p95 = timed(lambda c=call: (setattr(observability._db_collector, "_cached", None), c()))
+        p50, p95 = timed(
+            lambda c=call: (setattr(observability._db_collector, "_cached", None), c())
+        )
         print(f"{name:58} {p50:8.1f} {p95:8.1f} {stmts:10d}")
 
     t = time.perf_counter()

@@ -1,0 +1,3658 @@
+{
+  "components": {
+    "schemas": {
+      "ApprovalLink": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "verb": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verb"
+          }
+        },
+        "required": [
+          "resource",
+          "verb",
+          "title",
+          "type"
+        ],
+        "title": "ApprovalLink",
+        "type": "object"
+      },
+      "AuthorizeResponse": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "title": "Expires In Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "expires_in_seconds"
+        ],
+        "title": "AuthorizeResponse",
+        "type": "object"
+      },
+      "Body_create_job_from_upload_api_v1_jobs_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": ".xlsx or .csv with a Brand column",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "JobSettings as JSON",
+            "title": "Settings"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_job_from_upload_api_v1_jobs_upload_post",
+        "type": "object"
+      },
+      "BrandMatch": {
+        "enum": [
+          "EXACT",
+          "NORMALIZED",
+          "MISMATCH",
+          "MISSING"
+        ],
+        "title": "BrandMatch",
+        "type": "string"
+      },
+      "BrandOut": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "brand_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EligibilityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "brand_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BrandStatus"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "original_name",
+          "display_name",
+          "status",
+          "attempts",
+          "last_error",
+          "brand_status",
+          "brand_summary",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "BrandOut",
+        "type": "object"
+      },
+      "BrandStatus": {
+        "description": "Execution state of one brand-check unit (not its eligibility outcome).",
+        "enum": [
+          "PENDING",
+          "QUEUED",
+          "IN_PROGRESS",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "title": "BrandStatus",
+        "type": "string"
+      },
+      "BrandSummary": {
+        "properties": {
+          "asins_checked": {
+            "title": "Asins Checked",
+            "type": "integer"
+          },
+          "brand_wide_claim": {
+            "default": false,
+            "title": "Brand Wide Claim",
+            "type": "boolean"
+          },
+          "candidates_brand_matched": {
+            "title": "Candidates Brand Matched",
+            "type": "integer"
+          },
+          "candidates_total": {
+            "title": "Candidates Total",
+            "type": "integer"
+          },
+          "checks_completed": {
+            "title": "Checks Completed",
+            "type": "integer"
+          },
+          "checks_planned": {
+            "title": "Checks Planned",
+            "type": "integer"
+          },
+          "listable_asins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Listable Asins",
+            "type": "array"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "rules_version": {
+            "default": "2026.10.1",
+            "title": "Rules Version",
+            "type": "string"
+          },
+          "sample_sufficient": {
+            "title": "Sample Sufficient",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EligibilityStatus"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "rule_id",
+          "rationale",
+          "candidates_total",
+          "candidates_brand_matched",
+          "checks_planned",
+          "checks_completed",
+          "asins_checked",
+          "sample_sufficient",
+          "status_counts",
+          "listable_asins",
+          "brand_wide_claim",
+          "rules_version"
+        ],
+        "title": "BrandSummary",
+        "type": "object"
+      },
+      "CandidateOut": {
+        "properties": {
+          "asin": {
+            "title": "Asin",
+            "type": "string"
+          },
+          "brand_attribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Attribute"
+          },
+          "brand_match": {
+            "$ref": "#/components/schemas/BrandMatch"
+          },
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "product_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Type"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "asin",
+          "title",
+          "brand_attribute",
+          "category_name",
+          "product_type",
+          "brand_match",
+          "rejection_reason",
+          "rank",
+          "selected"
+        ],
+        "title": "CandidateOut",
+        "type": "object"
+      },
+      "CheckDetailOut": {
+        "properties": {
+          "approval_links": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalLink"
+            },
+            "title": "Approval Links",
+            "type": "array"
+          },
+          "asin": {
+            "title": "Asin",
+            "type": "string"
+          },
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateOut"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "condition": {
+            "title": "Condition",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_brand_id": {
+            "format": "uuid",
+            "title": "Job Brand Id",
+            "type": "string"
+          },
+          "marketplace_id": {
+            "title": "Marketplace Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationOut"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "rules_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules Version"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CheckState"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EligibilityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "verification_methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Verification Methods",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "job_brand_id",
+          "brand",
+          "asin",
+          "title",
+          "marketplace_id",
+          "condition",
+          "state",
+          "status",
+          "rule_id",
+          "rationale",
+          "reason_codes",
+          "messages",
+          "approval_links",
+          "verification_methods",
+          "checked_at",
+          "rules_version",
+          "candidate",
+          "observations"
+        ],
+        "title": "CheckDetailOut",
+        "type": "object"
+      },
+      "CheckOut": {
+        "properties": {
+          "approval_links": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalLink"
+            },
+            "title": "Approval Links",
+            "type": "array"
+          },
+          "asin": {
+            "title": "Asin",
+            "type": "string"
+          },
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "condition": {
+            "title": "Condition",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_brand_id": {
+            "format": "uuid",
+            "title": "Job Brand Id",
+            "type": "string"
+          },
+          "marketplace_id": {
+            "title": "Marketplace Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CheckState"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EligibilityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "verification_methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Verification Methods",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "job_brand_id",
+          "brand",
+          "asin",
+          "title",
+          "marketplace_id",
+          "condition",
+          "state",
+          "status",
+          "rule_id",
+          "rationale",
+          "reason_codes",
+          "messages",
+          "approval_links",
+          "verification_methods",
+          "checked_at"
+        ],
+        "title": "CheckOut",
+        "type": "object"
+      },
+      "CheckState": {
+        "enum": [
+          "PENDING",
+          "DONE"
+        ],
+        "title": "CheckState",
+        "type": "string"
+      },
+      "ConnectRequest": {
+        "properties": {
+          "refresh_token": {
+            "format": "password",
+            "maxLength": 4000,
+            "minLength": 20,
+            "title": "Refresh Token",
+            "type": "string",
+            "writeOnly": true
+          },
+          "seller_id": {
+            "description": "Selling partner (merchant) ID",
+            "maxLength": 20,
+            "minLength": 8,
+            "title": "Seller Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seller_id",
+          "refresh_token"
+        ],
+        "title": "ConnectRequest",
+        "type": "object"
+      },
+      "ConnectionStatus": {
+        "properties": {
+          "authorization_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Type"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verified At"
+          },
+          "needs_reconnect": {
+            "default": false,
+            "title": "Needs Reconnect",
+            "type": "boolean"
+          },
+          "seller_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "connected",
+          "seller_id",
+          "authorization_type",
+          "status",
+          "needs_reconnect",
+          "last_verified_at",
+          "last_error"
+        ],
+        "title": "ConnectionStatus",
+        "type": "object"
+      },
+      "DataSource": {
+        "enum": [
+          "LIVE",
+          "MOCK"
+        ],
+        "title": "DataSource",
+        "type": "string"
+      },
+      "DuplicateRow": {
+        "properties": {
+          "duplicate_of_row": {
+            "title": "Duplicate Of Row",
+            "type": "integer"
+          },
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "original_name",
+          "duplicate_of_row"
+        ],
+        "title": "DuplicateRow",
+        "type": "object"
+      },
+      "EligibilityStatus": {
+        "enum": [
+          "VERIFIED_LISTABLE",
+          "BRAND_APPROVAL_REQUIRED",
+          "OTHER_APPROVAL_REQUIRED",
+          "NOT_ELIGIBLE",
+          "NO_PRODUCT_FOUND",
+          "NEEDS_MANUAL_CHECK",
+          "MIXED_RESULTS"
+        ],
+        "title": "EligibilityStatus",
+        "type": "string"
+      },
+      "ErrorOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorOut",
+        "type": "object"
+      },
+      "EventOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_brand_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Brand Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "job_brand_id",
+          "payload",
+          "created_at"
+        ],
+        "title": "EventOut",
+        "type": "object"
+      },
+      "ExportOut": {
+        "properties": {
+          "checks_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checks Count"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExportStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "requested_at",
+          "finished_at",
+          "expires_at",
+          "size_bytes",
+          "checks_count",
+          "error",
+          "download_url"
+        ],
+        "title": "ExportOut",
+        "type": "object"
+      },
+      "ExportStatus": {
+        "enum": [
+          "QUEUED",
+          "RUNNING",
+          "READY",
+          "FAILED"
+        ],
+        "title": "ExportStatus",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestionReport": {
+        "properties": {
+          "accepted": {
+            "default": 0,
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateRow"
+            },
+            "title": "Duplicates",
+            "type": "array"
+          },
+          "empty_rows": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Empty Rows",
+            "type": "array"
+          },
+          "invalid": {
+            "items": {
+              "$ref": "#/components/schemas/InvalidRow"
+            },
+            "title": "Invalid",
+            "type": "array"
+          },
+          "total_rows": {
+            "default": 0,
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_rows",
+          "accepted",
+          "empty_rows",
+          "duplicates",
+          "invalid"
+        ],
+        "title": "IngestionReport",
+        "type": "object"
+      },
+      "InvalidRow": {
+        "properties": {
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "original_name",
+          "reason"
+        ],
+        "title": "InvalidRow",
+        "type": "object"
+      },
+      "JobCreateRequest": {
+        "properties": {
+          "brands": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Brands",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/JobSettings"
+          }
+        },
+        "required": [
+          "brands"
+        ],
+        "title": "JobCreateRequest",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_source": {
+            "$ref": "#/components/schemas/DataSource"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ingestion_report": {
+            "$ref": "#/components/schemas/IngestionReport"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "pause_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause Reason"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/JobSettings"
+          },
+          "source_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filename"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "data_source",
+          "pause_reason",
+          "source_filename",
+          "settings",
+          "ingestion_report",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "progress",
+          "notice"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
+      "JobProgress": {
+        "properties": {
+          "brands_cancelled": {
+            "default": 0,
+            "title": "Brands Cancelled",
+            "type": "integer"
+          },
+          "brands_completed": {
+            "default": 0,
+            "title": "Brands Completed",
+            "type": "integer"
+          },
+          "brands_failed": {
+            "default": 0,
+            "title": "Brands Failed",
+            "type": "integer"
+          },
+          "brands_in_progress": {
+            "default": 0,
+            "title": "Brands In Progress",
+            "type": "integer"
+          },
+          "brands_pending": {
+            "default": 0,
+            "title": "Brands Pending",
+            "type": "integer"
+          },
+          "brands_total": {
+            "default": 0,
+            "title": "Brands Total",
+            "type": "integer"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "checks_done": {
+            "default": 0,
+            "title": "Checks Done",
+            "type": "integer"
+          },
+          "checks_total": {
+            "default": 0,
+            "title": "Checks Total",
+            "type": "integer"
+          },
+          "needs_manual_check": {
+            "default": 0,
+            "title": "Needs Manual Check",
+            "type": "integer"
+          },
+          "percent_complete": {
+            "default": 0.0,
+            "title": "Percent Complete",
+            "type": "number"
+          },
+          "restricted": {
+            "default": 0,
+            "title": "Restricted",
+            "type": "integer"
+          },
+          "verified_listable": {
+            "default": 0,
+            "title": "Verified Listable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "brands_total",
+          "brands_pending",
+          "brands_in_progress",
+          "brands_completed",
+          "brands_failed",
+          "brands_cancelled",
+          "checks_total",
+          "checks_done",
+          "verified_listable",
+          "restricted",
+          "needs_manual_check",
+          "by_status",
+          "percent_complete"
+        ],
+        "title": "JobProgress",
+        "type": "object"
+      },
+      "JobSettings": {
+        "properties": {
+          "conditions": {
+            "default": [
+              "new_new"
+            ],
+            "items": {
+              "enum": [
+                "new_new",
+                "new_open_box",
+                "new_oem",
+                "refurbished_refurbished",
+                "used_like_new",
+                "used_very_good",
+                "used_good",
+                "used_acceptable",
+                "collectible_like_new",
+                "collectible_very_good",
+                "collectible_good",
+                "collectible_acceptable",
+                "club_club"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "max_asins_per_brand": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Asins Per Brand",
+            "type": "integer"
+          },
+          "max_catalog_pages": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Max Catalog Pages",
+            "type": "integer"
+          },
+          "min_sample_size": {
+            "default": 3,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Min Sample Size",
+            "type": "integer"
+          }
+        },
+        "title": "JobSettings",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "QUEUED",
+          "RUNNING",
+          "PAUSED",
+          "CANCELLED",
+          "COMPLETED"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "ManualEvidenceIn": {
+        "additionalProperties": false,
+        "description": "What the reviewer saw on the Seller Central product panel. Observations, not a verdict.",
+        "properties": {
+          "action_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Enabled"
+          },
+          "action_label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Primary button, e.g. 'Sell this product'",
+            "title": "Action Label"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "notices": {
+            "description": "Exact text of every notice in the panel",
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Notices",
+            "type": "array"
+          },
+          "page_asin": {
+            "description": "ASIN shown on the panel",
+            "pattern": "^[A-Za-z0-9]{10}$",
+            "title": "Page Asin",
+            "type": "string"
+          },
+          "page_brand": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Brand"
+          },
+          "product_unavailable": {
+            "default": false,
+            "title": "Product Unavailable",
+            "type": "boolean"
+          },
+          "selected_condition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "new_new",
+                  "new_open_box",
+                  "new_oem",
+                  "refurbished_refurbished",
+                  "used_like_new",
+                  "used_very_good",
+                  "used_good",
+                  "used_acceptable",
+                  "collectible_like_new",
+                  "collectible_very_good",
+                  "collectible_good",
+                  "collectible_acceptable",
+                  "club_club"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Condition chosen in the panel's dropdown; null if none",
+            "title": "Selected Condition"
+          }
+        },
+        "required": [
+          "page_asin"
+        ],
+        "title": "ManualEvidenceIn",
+        "type": "object"
+      },
+      "MeOut": {
+        "properties": {
+          "amazon_mode": {
+            "title": "Amazon Mode",
+            "type": "string"
+          },
+          "connected_to_amazon": {
+            "title": "Connected To Amazon",
+            "type": "boolean"
+          },
+          "marketplace_id": {
+            "title": "Marketplace Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "marketplace_id",
+          "amazon_mode",
+          "connected_to_amazon"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "ObservationOut": {
+        "properties": {
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "evidence_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Ref"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ObservationOutcome"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObservationSource"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "outcome",
+          "http_status",
+          "error_detail",
+          "context",
+          "signals",
+          "raw",
+          "evidence_ref",
+          "observed_at"
+        ],
+        "title": "ObservationOut",
+        "type": "object"
+      },
+      "ObservationOutcome": {
+        "description": "Whether the evidence source produced a usable answer at all.",
+        "enum": [
+          "OK",
+          "AUTH_ERROR",
+          "RATE_LIMITED",
+          "HTTP_ERROR",
+          "MALFORMED_RESPONSE",
+          "SESSION_EXPIRED",
+          "PAGE_UNAVAILABLE",
+          "TIMEOUT"
+        ],
+        "title": "ObservationOutcome",
+        "type": "string"
+      },
+      "ObservationSource": {
+        "enum": [
+          "SP_API_RESTRICTIONS",
+          "BROWSER",
+          "MANUAL"
+        ],
+        "title": "ObservationSource",
+        "type": "string"
+      },
+      "Page_BrandOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BrandOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[BrandOut]",
+        "type": "object"
+      },
+      "Page_CheckOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[CheckOut]",
+        "type": "object"
+      },
+      "Page_JobOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[JobOut]",
+        "type": "object"
+      },
+      "Page_ReviewItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ReviewItem]",
+        "type": "object"
+      },
+      "RetryBrandIn": {
+        "properties": {
+          "rediscover": {
+            "default": false,
+            "description": "Search the catalog again from the start",
+            "title": "Rediscover",
+            "type": "boolean"
+          }
+        },
+        "title": "RetryBrandIn",
+        "type": "object"
+      },
+      "ReviewItem": {
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "asin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asin"
+          },
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "brand_id": {
+            "format": "uuid",
+            "title": "Brand Id",
+            "type": "string"
+          },
+          "check_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Id"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "how_to": {
+            "items": {
+              "type": "string"
+            },
+            "title": "How To",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "CHECK",
+              "BRAND"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "seller_central_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Central Url"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EligibilityStatus"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind",
+          "brand_id",
+          "brand",
+          "check_id",
+          "asin",
+          "title",
+          "condition",
+          "status",
+          "rule_id",
+          "rationale",
+          "actions",
+          "how_to",
+          "seller_central_url"
+        ],
+        "title": "ReviewItem",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "description": "Per-seller API key",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "ASIN-level, evidence-backed listing eligibility for an authorised seller account. A brand-level result describes only the ASINs that were actually checked.",
+    "title": "Amazon India Seller Eligibility Checker",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/amazon/authorize": {
+      "post": {
+        "description": "Begin website authorisation: send the seller's browser to `authorization_url`.",
+        "operationId": "start_authorization_api_v1_amazon_authorize_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Authorization",
+        "tags": [
+          "amazon"
+        ]
+      }
+    },
+    "/api/v1/amazon/connection": {
+      "delete": {
+        "operationId": "disconnect_api_v1_amazon_connection_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disconnect",
+        "tags": [
+          "amazon"
+        ]
+      },
+      "get": {
+        "operationId": "connection_status_api_v1_amazon_connection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Connection Status",
+        "tags": [
+          "amazon"
+        ]
+      },
+      "put": {
+        "description": "Self-authorisation for a private application the seller owns.",
+        "operationId": "connect_self_authorised_api_v1_amazon_connection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Connect Self Authorised",
+        "tags": [
+          "amazon"
+        ]
+      }
+    },
+    "/api/v1/amazon/connection/verify": {
+      "post": {
+        "operationId": "verify_connection_api_v1_amazon_connection_verify_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Connection",
+        "tags": [
+          "amazon"
+        ]
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Jobs"
+      },
+      "post": {
+        "operationId": "create_job_api_v1_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Job"
+      }
+    },
+    "/api/v1/jobs/upload": {
+      "post": {
+        "operationId": "create_job_from_upload_api_v1_jobs_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_job_from_upload_api_v1_jobs_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Job From Upload"
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "read_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/brands": {
+      "get": {
+        "operationId": "list_brands_api_v1_jobs__job_id__brands_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BrandStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EligibilityStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_BrandOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Brands"
+      }
+    },
+    "/api/v1/jobs/{job_id}/brands/{brand_id}/candidates": {
+      "get": {
+        "operationId": "list_candidates_api_v1_jobs__job_id__brands__brand_id__candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "brand_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Brand Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateOut"
+                  },
+                  "title": "Response List Candidates Api V1 Jobs  Job Id  Brands  Brand Id  Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Candidates"
+      }
+    },
+    "/api/v1/jobs/{job_id}/brands/{brand_id}/retry": {
+      "post": {
+        "operationId": "retry_brand_api_v1_jobs__job_id__brands__brand_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "brand_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Brand Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RetryBrandIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Brand"
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/checks": {
+      "get": {
+        "operationId": "list_checks_api_v1_jobs__job_id__checks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repeat to match several statuses (e.g. the 'restricted' group)",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/EligibilityStatus"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeat to match several statuses (e.g. the 'restricted' group)",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CheckState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CheckOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Checks"
+      }
+    },
+    "/api/v1/jobs/{job_id}/checks/{check_id}": {
+      "get": {
+        "operationId": "read_check_api_v1_jobs__job_id__checks__check_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Check"
+      }
+    },
+    "/api/v1/jobs/{job_id}/checks/{check_id}/manual-evidence": {
+      "post": {
+        "description": "Record what you saw in Seller Central. The status is derived from it, never supplied.",
+        "operationId": "add_manual_evidence_api_v1_jobs__job_id__checks__check_id__manual_evidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualEvidenceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Manual Evidence"
+      }
+    },
+    "/api/v1/jobs/{job_id}/checks/{check_id}/recheck": {
+      "post": {
+        "description": "Ask Amazon's API about this ASIN again (earlier evidence is kept as history).",
+        "operationId": "recheck_api_v1_jobs__job_id__checks__check_id__recheck_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Recheck"
+      }
+    },
+    "/api/v1/jobs/{job_id}/events": {
+      "get": {
+        "operationId": "read_events_api_v1_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EventOut"
+                  },
+                  "title": "Response Read Events Api V1 Jobs  Job Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Events"
+      }
+    },
+    "/api/v1/jobs/{job_id}/export.xlsx": {
+      "get": {
+        "description": "Download the report directly. Very large jobs must use POST /jobs/{id}/exports instead,\nbecause building the file would otherwise hold a request open for tens of seconds.",
+        "operationId": "export_job_api_v1_jobs__job_id__export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/exports": {
+      "get": {
+        "operationId": "list_exports_api_v1_jobs__job_id__exports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExportOut"
+                  },
+                  "title": "Response List Exports Api V1 Jobs  Job Id  Exports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Exports"
+      },
+      "post": {
+        "description": "Queue a report build; poll the returned export until it is READY, then download it.",
+        "operationId": "create_export_api_v1_jobs__job_id__exports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Export"
+      }
+    },
+    "/api/v1/jobs/{job_id}/exports/{export_id}": {
+      "get": {
+        "operationId": "read_export_api_v1_jobs__job_id__exports__export_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Export"
+      }
+    },
+    "/api/v1/jobs/{job_id}/exports/{export_id}/download": {
+      "get": {
+        "operationId": "download_export_api_v1_jobs__job_id__exports__export_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Export"
+      }
+    },
+    "/api/v1/jobs/{job_id}/pause": {
+      "post": {
+        "operationId": "pause_job_api_v1_jobs__job_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pause Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/resume": {
+      "post": {
+        "operationId": "resume_job_api_v1_jobs__job_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/review-queue": {
+      "get": {
+        "operationId": "review_queue_api_v1_jobs__job_id__review_queue_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ReviewItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review Queue"
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me_api_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me"
+      }
+    }
+  }
+}

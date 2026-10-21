@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.enums import ObservationOutcome, ObservationSource
 
@@ -13,6 +13,8 @@ def utcnow() -> datetime:
 
 
 class ApprovalLink(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     resource: str | None = None
     verb: str | None = None
     title: str | None = None

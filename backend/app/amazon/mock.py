@@ -227,6 +227,13 @@ def demo_client() -> MockAmazonClient:
             "B0MOCKTP03", "Taparia Spanner Set", "taparia", category="Tools & Home Improvement"
         ),
     ]
+    # A fictional brand whose ASIN the catalog returns but the restrictions API does not recognise:
+    # a realistic way to end up in manual review (no restrictions entry -> ASIN_NOT_FOUND).
+    acme = [
+        catalog_item(
+            "B0MOCKAA01", "Acme Audio Studio Headphones", "Acme Audio", category="Electronics"
+        ),
+    ]
     restrictions: dict[Any, Behaviour] = {
         "B08PDL14VR": NO_RESTRICTIONS,
         "B0BXM5CGRM": NO_RESTRICTIONS,
@@ -242,7 +249,13 @@ def demo_client() -> MockAmazonClient:
         "B0MOCKTP03": category_gated("B0MOCKTP03"),
     }
     return MockAmazonClient(
-        catalog={"eSSL": essl, "Havells": havells, "Kangaro": kangaro, "Taparia": taparia},
+        catalog={
+            "eSSL": essl,
+            "Havells": havells,
+            "Kangaro": kangaro,
+            "Taparia": taparia,
+            "Acme Audio": acme,
+        },
         restrictions=restrictions,
     )
 

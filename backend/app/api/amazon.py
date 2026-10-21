@@ -7,7 +7,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy.orm import Session
 
 from app.api.deps import cipher_dep, current_seller, db_dep, http_dep, settings_dep
@@ -32,6 +32,8 @@ class ConnectRequest(BaseModel):
 
 
 class ConnectionStatus(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     connected: bool
     seller_id: str | None = None
     authorization_type: str | None = None

@@ -8,3 +8,6 @@ __pycache__/
 /var/
 node_modules/
 dist/
+frontend/e2e/.state/
+frontend/test-results/
+frontend/playwright-report/

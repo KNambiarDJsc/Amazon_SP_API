@@ -7,7 +7,7 @@ is "ungated" everywhere: even a fully listable sample says so about that sample.
 from collections import Counter
 from collections.abc import Sequence
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.classification import RULES_VERSION
 from app.enums import EligibilityStatus
@@ -20,6 +20,8 @@ class CheckedAsin(BaseModel):
 
 
 class BrandSummary(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     status: EligibilityStatus
     rule_id: str
     rationale: str

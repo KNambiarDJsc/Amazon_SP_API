@@ -27,11 +27,13 @@ from app.schemas import (
     CheckDetailOut,
     CheckOut,
     ErrorOut,
+    EventOut,
     ExportOut,
     JobCreateRequest,
     JobOut,
     JobSettings,
     ManualEvidenceIn,
+    MeOut,
     Page,
     RetryBrandIn,
     ReviewItem,
@@ -97,15 +99,15 @@ def _submit(
     return views.job_out(db, _owned_job(db, seller, job_id))
 
 
-@router.get("/me")
-def me(seller: Seller, db: Db, cfg: Cfg):
+@router.get("/me", response_model=MeOut)
+def me(seller: Seller, db: Db, cfg: Cfg) -> MeOut:
     credential = db.get(SellerCredential, seller.id)
-    return {
-        "name": seller.name,
-        "marketplace_id": seller.marketplace_id,
-        "amazon_mode": cfg.amazon_mode,
-        "connected_to_amazon": bool(credential and credential.status == "ACTIVE"),
-    }
+    return MeOut(
+        name=seller.name,
+        marketplace_id=seller.marketplace_id,
+        amazon_mode=cfg.amazon_mode,
+        connected_to_amazon=bool(credential and credential.status == "ACTIVE"),
+    )
 
 
 @router.post("/jobs", response_model=JobOut, status_code=201)
@@ -232,7 +234,10 @@ def list_checks(
     job_id: uuid.UUID,
     seller: Seller,
     db: Db,
-    status: EligibilityStatus | None = None,
+    status: Annotated[
+        list[EligibilityStatus] | None,
+        Query(description="Repeat to match several statuses (e.g. the 'restricted' group)"),
+    ] = None,
     state: CheckState | None = None,
     brand_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
@@ -241,7 +246,7 @@ def list_checks(
 ):
     _owned_job(db, seller, job_id)
     return views.list_checks(
-        db, job_id, status=status, state=state, brand_id=brand_id, q=q, limit=limit, offset=offset
+        db, job_id, statuses=status, state=state, brand_id=brand_id, q=q, limit=limit, offset=offset
     )
 
 
@@ -354,7 +359,7 @@ def retry_brand(
     return views.job_out(db, _owned_job(db, seller, job_id))
 
 
-@router.get("/jobs/{job_id}/events", responses=NOT_FOUND)
+@router.get("/jobs/{job_id}/events", response_model=list[EventOut], responses=NOT_FOUND)
 def read_events(job_id: uuid.UUID, seller: Seller, db: Db, limit: Limit = 100):
     _owned_job(db, seller, job_id)
     return views.list_events(db, job_id, limit)

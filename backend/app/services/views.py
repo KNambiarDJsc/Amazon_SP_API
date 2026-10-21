@@ -1,6 +1,7 @@
 """Read models for the API: queries that return API schemas."""
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.schemas import (
     CandidateOut,
     CheckDetailOut,
     CheckOut,
+    EventOut,
     IngestionReport,
     JobOut,
     JobSettings,
@@ -108,7 +110,7 @@ def list_checks(
     session: Session,
     job_id: uuid.UUID,
     *,
-    status: EligibilityStatus | None,
+    statuses: Sequence[EligibilityStatus] | None,
     state: CheckState | None,
     brand_id: uuid.UUID | None,
     q: str | None,
@@ -119,8 +121,8 @@ def list_checks(
     checks table alone (an index scan in display order), then load details for just those rows.
     Joins are only used inside the text search, as subqueries."""
     where = [EligibilityCheck.job_id == job_id]
-    if status:
-        where.append(EligibilityCheck.status == status)
+    if statuses:
+        where.append(EligibilityCheck.status.in_(statuses))
     if state:
         where.append(EligibilityCheck.state == state)
     if brand_id:
@@ -202,7 +204,7 @@ def list_candidates(session: Session, job_id: uuid.UUID, brand_id: uuid.UUID) ->
     return [CandidateOut.model_validate(r) for r in rows]
 
 
-def list_events(session: Session, job_id: uuid.UUID, limit: int) -> list[dict]:
+def list_events(session: Session, job_id: uuid.UUID, limit: int) -> list[EventOut]:
     rows = session.scalars(
         select(AuditEvent)
         .where(AuditEvent.job_id == job_id)
@@ -210,13 +212,13 @@ def list_events(session: Session, job_id: uuid.UUID, limit: int) -> list[dict]:
         .limit(limit)
     ).all()
     return [
-        {
-            "id": r.id,
-            "event_type": r.event_type,
-            "job_brand_id": r.job_brand_id,
-            "payload": r.payload,
-            "created_at": r.created_at,
-        }
+        EventOut(
+            id=r.id,
+            event_type=r.event_type,
+            job_brand_id=r.job_brand_id,
+            payload=r.payload or {},
+            created_at=r.created_at,
+        )
         for r in rows
     ]
 
