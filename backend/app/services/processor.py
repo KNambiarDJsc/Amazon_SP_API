@@ -80,6 +80,10 @@ class _Interrupted(Exception):
         self.kind = kind  # "paused" | "cancelled" | "lease_lost"
 
 
+class _Permanent(Exception):
+    """Retrying cannot help (e.g. Amazon rejected this brand's search outright)."""
+
+
 class _Defer(Exception):
     def __init__(self, delay: float, reason: str, *, throttle: bool = False, audited: bool = True):
         super().__init__(reason)
@@ -129,6 +133,8 @@ class BrandProcessor:
             self._on_defer(ctx, defer)
         except AmazonAuthError as exc:
             self._on_auth_failure(ctx, exc)
+        except _Permanent as exc:
+            self._on_permanent(ctx, str(exc))
         except Exception as exc:  # noqa: BLE001 - last line of defence; classified and bounded
             log.exception("brand %s failed", brand_id)
             self._on_failure(ctx, exc)
@@ -258,6 +264,10 @@ class BrandProcessor:
                 )
             except AmazonRateLimited as exc:
                 raise self._throttled(exc) from exc
+            except AmazonRequestError as exc:
+                raise _Permanent(
+                    f"Catalog search rejected (HTTP {exc.status}): {exc.detail}"
+                ) from exc
             page = parse_catalog_page(body, ctx.seller.marketplace_id)
             token, pages = page.next_token, pages + 1
             with session_scope() as s:
@@ -595,6 +605,11 @@ class BrandProcessor:
                 error=detail,
             )
         self._enqueue_or_park(ctx.brand_id, delay)
+
+    def _on_permanent(self, ctx: BrandContext, reason: str) -> None:
+        with session_scope() as s:
+            if self._owns(s.get(JobBrand, ctx.brand_id)):
+                self._dead_letter(s, ctx, reason[:500])
 
     def _dead_letter(self, s, ctx: BrandContext, reason: str) -> None:
         brand = s.get(JobBrand, ctx.brand_id)

@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Text,
@@ -286,3 +287,39 @@ class AuditEvent(Base):
     event_type: Mapped[str] = mapped_column(String(60))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class SellerCredential(Base):
+    """The seller's SP-API refresh token, encrypted at rest. One row per seller.
+
+    Access tokens are short-lived and never stored. The plaintext refresh token is never logged
+    or returned by the API."""
+
+    __tablename__ = "seller_credentials"
+
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_accounts.id"), primary_key=True
+    )
+    authorization_type: Mapped[str] = mapped_column(String(20))  # SELF | OAUTH
+    refresh_token_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")  # ACTIVE | REVOKED
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    last_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class OAuthState(Base):
+    """Single-use, expiring anti-CSRF state for the website authorisation flow. The callback
+    arrives from the seller's browser without our API key, so this value is what identifies
+    (and authenticates) the seller on return."""
+
+    __tablename__ = "oauth_states"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_accounts.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)

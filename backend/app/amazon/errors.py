@@ -15,6 +15,11 @@ class AmazonAuthError(AmazonError):
     """Credentials or authorisation are missing, expired or revoked. Retrying cannot help."""
 
 
+class AmazonCredentialsRevoked(AmazonAuthError):
+    """The seller's refresh token is no longer valid (revoked or expired): they must reconnect.
+    Distinct from a wrong *application* secret, which no seller action can fix."""
+
+
 class AmazonTransientError(AmazonError):
     """Network trouble, timeouts, 5xx. Safe to retry with backoff."""
 

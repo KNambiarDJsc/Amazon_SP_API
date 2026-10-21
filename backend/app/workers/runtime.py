@@ -71,10 +71,10 @@ def default_client_factory(cfg: Settings) -> ClientFactory:
     if cfg.amazon_mode == "mock":
         client: AmazonClient = demo_client()
         return lambda _seller: client
-    raise RuntimeError(
-        "AMAZON_MODE=live needs the SP-API client, which is part of Phase 3. "
-        "Use AMAZON_MODE=mock for offline demo data."
-    )
+    from app.amazon.live import LiveClientFactory, validate_live_config
+
+    validate_live_config(cfg)
+    return LiveClientFactory(cfg)
 
 
 def build_runtime(

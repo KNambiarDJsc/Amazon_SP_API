@@ -24,7 +24,7 @@ evidence-backed shortlist of products that were verified listable.
 |---|---|---|
 | 1 | Schema, API contracts, rules engine, mocked Amazon responses | done |
 | 2 | Ingestion, queue, orchestration, checkpointing, Excel reports, HTTP API | done |
-| 3 | Seller authorisation, live SP-API | planned |
+| 3 | Seller authorisation, live SP-API | done (verified against a fake of Amazon's documented contract, not the real service) |
 | 4 | Policy-compliant browser verification, manual review | planned |
 | 5 | Dashboard, observability, hardening, Docker Compose | planned |
 
@@ -50,7 +50,7 @@ curl -H "Authorization: Bearer $KEY" -o report.xlsx localhost:8000/api/v1/jobs/$
 ```
 
 Interactive API docs: `http://localhost:8000/docs`. In `AMAZON_MODE=mock` every job and export is
-labelled demo data; `live` arrives with Phase 3.
+labelled demo data.
 
 ### API
 
@@ -65,6 +65,30 @@ labelled demo data; `live` arrives with Phase 3.
 | `GET /api/v1/jobs/{id}/checks` | ASIN checks; filter `status`, `state`, `brand_id`, `q`; paginated |
 | `GET /api/v1/jobs/{id}/checks/{check}` | One check with its full evidence trail |
 | `GET /api/v1/jobs/{id}/export.xlsx` | Four-sheet Excel report |
+| `GET/PUT/DELETE /api/v1/amazon/connection` | Connection status; self-authorise with a refresh token; disconnect |
+| `POST /api/v1/amazon/connection/verify` | Prove the stored credential still works |
+| `POST /api/v1/amazon/authorize`, `GET /api/v1/amazon/callback` | Website authorisation flow |
+
+### Going live (read before your first real run)
+
+1. In the Solution Provider Portal register an SP-API application with the **Product Listing** role
+   (needed by both Catalog Items and Listings Restrictions) for the Amazon India marketplace.
+2. Generate an encryption key: `python -m app.cli generate-encryption-key` and set, in `.env`:
+   `AMAZON_MODE=live`, `LWA_CLIENT_ID`, `LWA_CLIENT_SECRET`, `CREDENTIAL_ENCRYPTION_KEYS`.
+3. Connect the seller. **Private app (your own account):** put the refresh token you generated in a file,
+   `python -m app.cli connect-seller --seller-account <uuid> --amazon-seller-id <A...> --refresh-token-file token.txt`,
+   then delete the file. **Public app:** also set `SP_API_APPLICATION_ID` and `OAUTH_REDIRECT_URI`, then
+   `POST /api/v1/amazon/authorize` and send the seller to the returned URL.
+4. `GET /api/v1/amazon/connection` should report `connected: true`.
+5. **Start small.** Run one job with 2–3 brands you understand, and compare every result with what Seller
+   Central shows for the same ASIN. Check `Rationale` and the evidence trail on anything surprising.
+   This is the first contact with the real service; the test suite has only exercised Amazon's documented
+   contract.
+6. Check your account's SP-API usage plan before raising any `RATE_*` setting. Amazon's own pages
+   disagree about `searchCatalogItems` (2/s vs 5/s); the default is the conservative one.
+
+Use `SP_API_BASE_URL=https://sandbox.sellingpartnerapi-eu.amazon.com` to exercise authentication against
+Amazon's sandbox first; sandbox catalog data is static and will not match real brands.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design, failure handling and guarantees.
 

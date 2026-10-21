@@ -125,17 +125,52 @@ workers. Defaults (`searchCatalogItems` 2/s burst 2, `getListingsRestrictions` 5
 configuration, not constants: **verify them against the seller's current SP-API usage plan before
 raising them.** Adding workers does not raise throughput, because the buckets are shared.
 
-## 4. Reports
+## 4. Amazon authorisation and the live client
+
+India (`A21TJRUUN4KGV`) is served by the **EU** SP-API endpoint. Requests carry one LWA access token
+(`x-amz-access-token`); AWS SigV4/IAM has not been required since October 2023.
+
+| Concern | Design |
+|---|---|
+| Private app, seller's own org | **Self-authorisation**: the seller generates a refresh token for their own app and supplies it once (`PUT /amazon/connection` or `python -m app.cli connect-seller`, token via stdin/file, never an argument). It is proven valid with Amazon before anything is stored. |
+| Public / multi-seller app | **Website authorisation**: `POST /amazon/authorize` returns the Seller Central consent URL; Amazon redirects the seller's browser to `GET /amazon/callback` with `state`, `selling_partner_id` and a 5-minute `spapi_oauth_code`, which is exchanged for a refresh token. The seller never types a password or token into this app. |
+| Callback authentication | The callback is the only unauthenticated route (a browser redirect carries no API key). `state` is 256-bit, single-use, expiring (15 min) and consumed atomically before the exchange; unknown, expired and spent states are indistinguishable; the HTML response reflects no input. |
+| Token storage | Refresh tokens are Fernet-encrypted (`CREDENTIAL_ENCRYPTION_KEYS`, newest first, rotation supported) with the seller id inside the ciphertext, so a blob copied to another seller's row is refused. Access tokens live only in process memory. Tokens are never logged, returned or placed in error messages (tested). |
+| Token refresh | Cached per seller, renewed 60 s early, single-flight under a lock. A 401/403 triggers exactly one forced refresh and retry, because the cached token may simply have expired. |
+| `invalid_grant` | The seller's token is dead: credential marked `REVOKED`, job paused, dashboard shows *reconnect*. |
+| `invalid_client` | Our **application** secret is wrong: job paused, but the seller's credential is **not** revoked (no seller action can fix it). |
+| 403 that survives a refresh | Almost always a missing *Product Listing* role or an unauthorised app: job paused with that hint. |
+| Catalog search rejected (HTTP 4xx) | Permanent for that brand: dead-lettered immediately, not retried. |
+
+`searchCatalogItems` is called with `keywords`, one `marketplaceIds`, `includedData=summaries,productTypes`,
+`pageSize≤20`, `pageToken`. `getListingsRestrictions` with `asin`, `sellerId`, `marketplaceIds`,
+`conditionType`, `reasonLocale` (default `en_US`, because the classifier reads English reason text).
+Amazon's `brandNames` catalog filter is deliberately **not** used: validation happens on the returned
+brand attribute, and the filter's exact matching semantics should be measured on a real account first.
+
+### What is and is not verified
+
+Verified by tests: request construction, token lifecycle, every HTTP status mapping, the full job over
+the live code path against a strict fake of Amazon's HTTP surface (`tests/fake_spapi.py`), encryption,
+and the OAuth callback's security properties.
+
+**Not verified here (no Amazon access from CI):** behaviour against the real service. The fake encodes
+Amazon's *documented* contract (endpoints, parameters, error shapes, reason codes), so any gap between
+documentation and reality will only show up on a real account. Treat the first live run accordingly
+(see README).
+
+## 5. Reports
 
 `GET /api/v1/jobs/{id}/export.xlsx` builds four sheets from committed rows at request time. Strings
 beginning `= + - @` (brand names and product titles are attacker-influenced) are forced to text
 cells; a test scans the raw XML for formula elements. Jobs run against the offline mock are labelled
 `MOCK` on every row and in the file properties.
 
-## 5. Security notes (current state)
+## 6. Security notes (current state)
 
 * API keys: 256-bit random, shown once, stored as SHA-256. Cross-seller access is a 404, never 403.
 * Uploads: size limit, zip-bomb check before parsing, formulas never evaluated, row/column caps.
 * Search parameters are escaped (`%`/`_` are literal).
-* **Not yet built (Phase 3–5):** SP-API authorisation and credential encryption, TLS/reverse proxy,
-  request-size and API rate limits, user login, security headers, backups.
+* Amazon credentials: encrypted at rest, bound to the seller, never exposed (section 4).
+* **Not yet built (Phase 4–5):** TLS/reverse proxy, request-size and API rate limits, user login,
+  security headers, backups, secret management beyond environment variables.

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_seller, db_dep, dispatcher_dep, settings_dep
 from app.config import Settings
 from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus
-from app.models import SellerAccount
+from app.models import SellerAccount, SellerCredential
 from app.schemas import (
     BrandOut,
     CandidateOut,
@@ -84,12 +84,13 @@ def _submit(
 
 
 @router.get("/me")
-def me(seller: Seller, cfg: Cfg):
+def me(seller: Seller, db: Db, cfg: Cfg):
+    credential = db.get(SellerCredential, seller.id)
     return {
         "name": seller.name,
         "marketplace_id": seller.marketplace_id,
         "amazon_mode": cfg.amazon_mode,
-        "connected_to_amazon": bool(seller.amazon_seller_id),
+        "connected_to_amazon": bool(credential and credential.status == "ACTIVE"),
     }
 
 

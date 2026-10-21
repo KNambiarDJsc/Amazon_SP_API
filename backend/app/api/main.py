@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api import amazon
 from app.api.routes import health, router
 
 
@@ -13,6 +14,7 @@ def create_app() -> FastAPI:
         ),
     )
     app.include_router(router)
+    app.include_router(amazon.router)
     app.include_router(health)
     return app
 

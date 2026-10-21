@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.enums import MARKETPLACE_ID_IN
@@ -16,8 +16,27 @@ class Settings(BaseSettings):
     amazon_mode: str = Field(default="mock", pattern="^(mock|live)$")
     marketplace_id: str = MARKETPLACE_ID_IN
 
+    # --- Amazon SP-API (live mode). India (A21TJRUUN4KGV) is served by the EU endpoint.
+    sp_api_base_url: str = (
+        "https://sellingpartnerapi-eu.amazon.com"  # sandbox: sandbox.sellingpartnerapi-eu...
+    )
+    lwa_token_url: str = "https://api.amazon.com/auth/o2/token"
+    lwa_client_id: str = ""
+    lwa_client_secret: SecretStr = SecretStr("")
+    # Only needed for the public/multi-seller website authorisation flow.
+    sp_api_application_id: str = ""
+    oauth_redirect_uri: str = ""
+    seller_central_url: str = "https://sellercentral.amazon.in"
+    sp_api_draft_app: bool = False  # adds version=beta to the consent URL for apps in draft state
+    # Comma-separated Fernet keys, newest first. Older keys stay listed to decrypt until re-saved.
+    credential_encryption_keys: SecretStr = SecretStr("")
+    reason_locale: str = "en_US"  # message language; the classifier reads English reason text
+    http_timeout_seconds: float = 20.0
+    oauth_state_ttl_seconds: int = 900
+
     # SP-API usage plans differ per operation and seller; these are conservative defaults.
     # Verify against the current usage plan of the account before raising them.
+    # Amazon's own pages disagree on searchCatalogItems (2/s vs 5/s); stay conservative.
     rate_search_catalog_per_sec: float = 2.0
     rate_search_catalog_burst: int = 2
     rate_restrictions_per_sec: float = 5.0

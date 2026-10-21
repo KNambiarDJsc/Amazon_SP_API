@@ -45,3 +45,27 @@ def current_seller(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return account
+
+
+_http_client = None
+
+
+def http_dep():
+    """Shared outbound HTTP client (LWA calls). Tests override this with a mock transport."""
+    import httpx
+
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.Client(
+            timeout=httpx.Timeout(get_settings().http_timeout_seconds, connect=5.0)
+        )
+    return _http_client
+
+
+def cipher_dep(cfg: Annotated[Settings, Depends(settings_dep)]):
+    from app.services.credentials import CredentialCipher, CredentialError
+
+    try:
+        return CredentialCipher.from_setting(cfg.credential_encryption_keys.get_secret_value())
+    except CredentialError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
