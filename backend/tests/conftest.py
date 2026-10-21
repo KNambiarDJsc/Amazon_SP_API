@@ -49,3 +49,10 @@ def seller(session) -> SellerAccount:
 @pytest.fixture
 def now():
     return datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def clock():
+    from support import FakeClock
+
+    return FakeClock()

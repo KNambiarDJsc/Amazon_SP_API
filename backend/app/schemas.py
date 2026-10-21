@@ -193,6 +193,15 @@ class CheckDetailOut(CheckOut):
     observations: list[ObservationOut]
 
 
+class AuditEventOut(ORM):
+    id: int
+    event_type: str
+    job_brand_id: uuid.UUID | None
+    check_id: uuid.UUID | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
 T = TypeVar("T")
 
 

@@ -8,3 +8,5 @@ __pycache__/
 /var/
 node_modules/
 dist/
+*.db
+demo-report.xlsx

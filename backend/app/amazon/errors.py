@@ -19,6 +19,10 @@ class AmazonTransientError(AmazonError):
     """Network trouble, timeouts, 5xx. Safe to retry with backoff."""
 
 
+class AmazonTimeout(AmazonTransientError):
+    """No answer in time. Recorded as TIMEOUT evidence rather than a generic HTTP error."""
+
+
 class AmazonRequestError(AmazonError):
     """The request itself was rejected (4xx other than auth/throttle). Retrying cannot help."""
 

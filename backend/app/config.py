@@ -24,7 +24,20 @@ class Settings(BaseSettings):
     rate_restrictions_burst: int = 10
     max_rate_wait_seconds: float = 3.0  # longer waits defer the brand instead of blocking a worker
 
+    # "redis" shares one bucket per seller across worker processes; "memory" is for a single
+    # process (local runs, tests) and would let N workers exceed a seller's rate.
+    rate_limiter: str = Field(default="redis", pattern="^(redis|memory)$")
+
+    # Run the scheduler and worker inside the API process (single-machine mode, no Redis queue).
+    inline_worker: bool = False
+
     seller_max_concurrent_brands: int = 2
+
+    # A dispatched brand must be picked up within this window or it returns to the pool;
+    # this is what recovers work whose queue message was lost.
+    queue_lease_seconds: int = 120
+    scheduler_interval_seconds: float = 2.0
+    max_dispatch_per_tick: int = 100
 
     brand_lease_seconds: int = 300
     max_brand_attempts: int = 5

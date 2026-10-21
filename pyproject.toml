@@ -1,6 +1,6 @@
 [project]
 name = "amazon-sp-eligibility"
-version = "0.1.0"
+version = "0.2.0"
 description = "Self-hostable Amazon India seller eligibility checker (ASIN-level, evidence-backed)"
 requires-python = ">=3.11"
 dependencies = [
@@ -43,3 +43,7 @@ extend-exclude = ["backend/alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom puts these calls in argument defaults on purpose.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Form"]
