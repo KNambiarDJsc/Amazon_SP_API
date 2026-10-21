@@ -1,0 +1,11 @@
+{
+  "restrictions": [
+    {
+      "marketplaceId": "A21TJRUUN4KGV",
+      "conditionType": "new_new",
+      "reasons": [
+        {"message": "The ASIN was not found in the marketplace.", "reasonCode": "ASIN_NOT_FOUND"}
+      ]
+    }
+  ]
+}

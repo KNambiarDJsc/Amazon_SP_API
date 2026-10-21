@@ -1,0 +1,28 @@
+{
+  "numberOfResults": 3,
+  "pagination": {"nextToken": "NEXT-PAGE-TOKEN"},
+  "items": [
+    {
+      "asin": "b08pdl14vr",
+      "summaries": [
+        {
+          "marketplaceId": "ATVPDKIKX0DER",
+          "brand": "WrongMarketplaceBrand",
+          "itemName": "Should not be picked"
+        },
+        {
+          "marketplaceId": "A21TJRUUN4KGV",
+          "brand": "eSSL",
+          "itemName": "ESSL IDENTIX K30 PRO BIOMETRIC Machine",
+          "browseClassification": {"displayName": "Biometric Attendance Systems", "classificationId": "1234567031"}
+        }
+      ],
+      "productTypes": [{"marketplaceId": "A21TJRUUN4KGV", "productType": "ELECTRONIC_DEVICE"}]
+    },
+    {"summaries": [{"marketplaceId": "A21TJRUUN4KGV", "brand": "eSSL", "itemName": "Item with no ASIN"}]},
+    {
+      "asin": "B0NOBRAND1",
+      "summaries": [{"marketplaceId": "A21TJRUUN4KGV", "itemName": "Summary without a brand"}]
+    }
+  ]
+}

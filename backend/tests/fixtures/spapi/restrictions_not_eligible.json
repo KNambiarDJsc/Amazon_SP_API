@@ -1,0 +1,11 @@
+{
+  "restrictions": [
+    {
+      "marketplaceId": "A21TJRUUN4KGV",
+      "conditionType": "new_new",
+      "reasons": [
+        {"message": "This product cannot be listed by your account.", "reasonCode": "NOT_ELIGIBLE"}
+      ]
+    }
+  ]
+}

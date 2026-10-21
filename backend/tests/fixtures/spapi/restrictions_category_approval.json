@@ -1,0 +1,15 @@
+{
+  "restrictions": [
+    {
+      "marketplaceId": "A21TJRUUN4KGV",
+      "conditionType": "new_new",
+      "reasons": [
+        {
+          "message": "You need approval to list in this category.",
+          "reasonCode": "APPROVAL_REQUIRED",
+          "links": [{"resource": "https://sellercentral.amazon.in/hz/approvalrequest/restrictions/approve?asin=B0MOCKTP01", "verb": "GET", "title": "Apply to sell", "type": "text/html"}]
+        }
+      ]
+    }
+  ]
+}
