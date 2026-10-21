@@ -4,8 +4,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.classification import Classification, classify_check
-from app.domain.observations import Observation, ObservationContext, SpApiSignals, utcnow
-from app.enums import CheckState
+from app.domain.observations import (
+    BrowserSignals,
+    Observation,
+    ObservationContext,
+    SpApiSignals,
+    utcnow,
+)
+from app.enums import CheckState, ObservationSource
 from app.models import CheckObservation, EligibilityCheck
 
 
@@ -14,7 +20,16 @@ def observation_from_row(row: CheckObservation) -> Observation:
         source=row.source,
         outcome=row.outcome,
         context=ObservationContext.model_validate(row.context),
-        sp_api=SpApiSignals.model_validate(row.signals) if row.signals else None,
+        sp_api=(
+            SpApiSignals.model_validate(row.signals)
+            if row.signals and row.source == ObservationSource.SP_API_RESTRICTIONS
+            else None
+        ),
+        browser=(
+            BrowserSignals.model_validate(row.signals)
+            if row.signals and row.source != ObservationSource.SP_API_RESTRICTIONS
+            else None
+        ),
         http_status=row.http_status,
         error_detail=row.error_detail,
         observed_at=row.observed_at,
@@ -34,7 +49,7 @@ def add_observation(
         http_status=obs.http_status,
         error_detail=obs.error_detail,
         context=obs.context.model_dump(),
-        signals=obs.sp_api.model_dump() if obs.sp_api else None,
+        signals=(obs.sp_api or obs.browser).model_dump() if (obs.sp_api or obs.browser) else None,
         raw=obs.raw,
         evidence_ref=obs.evidence_ref,
         observed_at=obs.observed_at,

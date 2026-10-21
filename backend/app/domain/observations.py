@@ -42,6 +42,22 @@ class SpApiSignals(BaseModel):
     entries: list[RestrictionEntry] = Field(default_factory=list)
 
 
+class BrowserSignals(BaseModel):
+    """What was on the Seller Central screen, whether read by the browser adapter or typed in by
+    a human reviewer. Observations only: the verdict is derived from these by the rules engine."""
+
+    signed_in: bool = True
+    challenge_detected: bool = False  # CAPTCHA / MFA / robot check: a human must take over
+    page_loaded: bool = True
+    product_unavailable: bool = False
+    page_asin: str | None = None
+    page_brand: str | None = None  # the panel often shows none; the catalog attribute covers it
+    selected_condition: str | None = None  # normalised conditionType, e.g. "new_new"
+    notices: list[str] = Field(default_factory=list)  # every notice/alert visible in the panel
+    action_label: str | None = None  # "Sell this product" | "Apply to sell"
+    action_enabled: bool | None = None
+
+
 class ObservationContext(BaseModel):
     """The question that was asked; used to confirm an answer is about the same thing."""
 
@@ -50,6 +66,8 @@ class ObservationContext(BaseModel):
     condition: str
     seller_ref: str
     expected_brand: str | None = None
+    # True when the catalog's own brand attribute for this ASIN already matched the searched brand.
+    brand_validated: bool = False
 
 
 class Observation(BaseModel):
@@ -57,6 +75,7 @@ class Observation(BaseModel):
     outcome: ObservationOutcome = ObservationOutcome.OK
     context: ObservationContext
     sp_api: SpApiSignals | None = None
+    browser: BrowserSignals | None = None
     http_status: int | None = None
     error_detail: str | None = None
     observed_at: datetime = Field(default_factory=utcnow)

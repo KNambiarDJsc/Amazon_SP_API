@@ -25,7 +25,7 @@ evidence-backed shortlist of products that were verified listable.
 | 1 | Schema, API contracts, rules engine, mocked Amazon responses | done |
 | 2 | Ingestion, queue, orchestration, checkpointing, Excel reports, HTTP API | done |
 | 3 | Seller authorisation, live SP-API | done (verified against a fake of Amazon's documented contract, not the real service) |
-| 4 | Policy-compliant browser verification, manual review | planned |
+| 4 | Human-assisted review workflow; optional, policy-gated browser verification | done (browser adapter verified against an offline fake of the site, not the real one) |
 | 5 | Dashboard, observability, hardening, Docker Compose | planned |
 
 ## Quickstart (offline demo, no Amazon credentials)
@@ -65,6 +65,10 @@ labelled demo data.
 | `GET /api/v1/jobs/{id}/checks` | ASIN checks; filter `status`, `state`, `brand_id`, `q`; paginated |
 | `GET /api/v1/jobs/{id}/checks/{check}` | One check with its full evidence trail |
 | `GET /api/v1/jobs/{id}/export.xlsx` | Four-sheet Excel report |
+| `GET /api/v1/jobs/{id}/review-queue` | What still needs a person, with instructions |
+| `POST /api/v1/jobs/{id}/checks/{check}/manual-evidence` | Record what you saw in Seller Central; the status is derived, never supplied |
+| `POST /api/v1/jobs/{id}/checks/{check}/recheck` | Ask the API again about one ASIN |
+| `POST /api/v1/jobs/{id}/brands/{brand}/retry` | Re-run a dead-lettered or empty brand (`{"rediscover": true}` searches again) |
 | `GET/PUT/DELETE /api/v1/amazon/connection` | Connection status; self-authorise with a refresh token; disconnect |
 | `POST /api/v1/amazon/connection/verify` | Prove the stored credential still works |
 | `POST /api/v1/amazon/authorize`, `GET /api/v1/amazon/callback` | Website authorisation flow |
@@ -90,6 +94,14 @@ labelled demo data.
 Use `SP_API_BASE_URL=https://sandbox.sellingpartnerapi-eu.amazon.com` to exercise authentication against
 Amazon's sandbox first; sandbox catalog data is static and will not match real brands.
 
+### Unresolved items and the browser
+
+Anything the API cannot settle lands in the review queue. The recommended way to resolve it is a
+person recording what Seller Central shows (see [docs/BROWSER_VERIFICATION.md](docs/BROWSER_VERIFICATION.md)).
+An optional browser adapter exists, **off by default** and gated by Amazon's March 2026 Agent Policy
+(self-identification, human sign-in, stop on any CAPTCHA, never presses a sell/apply control). Read that
+document before enabling it; it also lists what has *not* been verified against the real site.
+
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design, failure handling and guarantees.
 
 ## Development
@@ -97,6 +109,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design, failure handling an
 ```bash
 uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/pytest                      # offline, SQLite, no credentials needed
+.venv/bin/pytest -m "not browser"    # skip the tests that drive a real Chromium
 
 # Full suite: real PostgreSQL (migration drift, concurrency races) and real Redis
 # (rate limiter, Dramatiq workers):

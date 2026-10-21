@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.brand import brands_equivalent
 from app.domain.observations import ApprovalLink, Observation, RestrictionReason
 from app.enums import (
     BLOCKING_STATUSES,
@@ -48,6 +49,10 @@ class Verdict(BaseModel):
     # True when the source produced no usable answer (error, expired session, malformed body).
     # Such verdicts never override a real answer from another source.
     evidence_missing: bool = False
+    # For an ambiguous verdict: True if what was seen suggests a restriction may exist (so it
+    # contradicts a "listable" answer from another source); False if it merely carries no
+    # information about this ASIN (wrong product, condition not chosen, ASIN unknown).
+    signals_restriction: bool = True
     reason_codes: list[str] = Field(default_factory=list)
     messages: list[str] = Field(default_factory=list)
     approval_links: list[ApprovalLink] = Field(default_factory=list)
@@ -175,6 +180,7 @@ def classify_sp_api(obs: Observation) -> Verdict:
             obs,
             "SPAPI_CONTEXT_MISMATCH",
             "Response described a different marketplace or condition than the one requested.",
+            signals_restriction=False,
         )
     if any((r.code or "").strip().upper() == "ASIN_NOT_FOUND" for r in reasons):
         return _ambiguous(
@@ -184,6 +190,7 @@ def classify_sp_api(obs: Observation) -> Verdict:
             "in this marketplace.",
             reason_codes=codes,
             messages=messages,
+            signals_restriction=False,
         )
     if not reasons:
         return _ambiguous(
@@ -201,8 +208,192 @@ def classify_sp_api(obs: Observation) -> Verdict:
     )
 
 
+# ---- browser / human-entered evidence --------------------------------------------------------
+
+_SELL_LABELS = {"sell this product"}
+_APPLY_LABELS = {"apply to sell"}
+_APPROVAL_NOTICE_RE = re.compile(r"\bapproval\b", re.IGNORECASE)
+_NOT_ELIGIBLE_NOTICE_RE = re.compile(
+    r"\b(not eligible|cannot be listed|can't be listed|unable to list"
+    r"|not allowed to (list|sell))\b",
+    re.IGNORECASE,
+)
+# "Used, Collectible, Refurbished conditions: This product has other listing limitations."
+_CONDITION_NOTICE_RE = re.compile(
+    r"^\s*(?P<families>[A-Za-z][A-Za-z ,&/-]*?)\s+conditions?\s*:", re.IGNORECASE
+)
+_FAMILIES = ("new", "used", "refurbished", "collectible", "club")
+
+
+def _condition_family(condition: str) -> str:
+    return condition.split("_", 1)[0].casefold()
+
+
+def _norm(text: str | None) -> str:
+    return " ".join((text or "").split()).casefold()
+
+
+def _notice_status(notice: str) -> EligibilityStatus | None:
+    """Status for a notice that says the product is blocked; None if it is not that kind."""
+    if _NOT_ELIGIBLE_NOTICE_RE.search(notice):
+        return EligibilityStatus.NOT_ELIGIBLE
+    if _APPROVAL_NOTICE_RE.search(notice):
+        if approval_scope(notice) == "BRAND":
+            return EligibilityStatus.BRAND_APPROVAL_REQUIRED
+        return EligibilityStatus.OTHER_APPROVAL_REQUIRED
+    return None
+
+
+def _limitation_families(notice: str) -> set[str] | None:
+    """Condition families a "<X> conditions: ..." notice is about, or None if it is not one."""
+    match = _CONDITION_NOTICE_RE.match(notice)
+    if not match:
+        return None
+    named = {
+        word.casefold()
+        for word in re.split(r"[,&/ ]+", match.group("families"))
+        if word and word.casefold() in _FAMILIES
+    }
+    return named or None
+
+
+def classify_browser(obs: Observation) -> Verdict:
+    """Rules for what Seller Central showed (read by the adapter or entered by a reviewer).
+
+    Absence of an approval message proves nothing by itself: listing is confirmed only when the
+    right product is on screen, the right condition is selected, the sell control is enabled,
+    and no notice anywhere in the panel says otherwise.
+    """
+    ctx = obs.context
+    if obs.outcome != ObservationOutcome.OK:
+        return _missing(
+            obs,
+            f"BROWSER_{obs.outcome.value}",
+            f"Seller Central gave no usable answer ({obs.outcome.value}"
+            + (f": {obs.error_detail}" if obs.error_detail else "")
+            + ").",
+        )
+    sig = obs.browser
+    if sig is None:
+        return _missing(obs, "BROWSER_NO_SIGNALS", "No screen observations were recorded.")
+    if not sig.signed_in:
+        return _missing(obs, "BROWSER_SESSION_EXPIRED", "The Seller Central session is signed out.")
+    if sig.challenge_detected:
+        return _missing(
+            obs,
+            "BROWSER_CHALLENGE",
+            "A sign-in, CAPTCHA or verification challenge appeared; a person must complete it.",
+        )
+    if not sig.page_loaded:
+        return _missing(obs, "BROWSER_PAGE_NOT_LOADED", "The product panel did not finish loading.")
+    if sig.product_unavailable:
+        return _ambiguous(
+            obs, "BROWSER_PRODUCT_UNAVAILABLE", "Seller Central shows the product as unavailable."
+        )
+
+    # Is this even the product that was asked about?
+    if _norm(sig.page_asin) != _norm(ctx.asin):
+        return _ambiguous(
+            obs,
+            "BROWSER_ASIN_MISMATCH" if sig.page_asin else "BROWSER_ASIN_UNCONFIRMED",
+            f"The panel shows ASIN {sig.page_asin or 'none'}, not {ctx.asin}; "
+            "it is not evidence about this product.",
+            signals_restriction=False,
+        )
+    if sig.page_brand:
+        if ctx.expected_brand and not brands_equivalent(sig.page_brand, ctx.expected_brand):
+            return _ambiguous(
+                obs,
+                "BROWSER_BRAND_MISMATCH",
+                f"The panel shows brand {sig.page_brand!r}, not {ctx.expected_brand!r}.",
+                signals_restriction=False,
+            )
+    elif not ctx.brand_validated:
+        return _ambiguous(
+            obs,
+            "BROWSER_BRAND_UNCONFIRMED",
+            "The product's brand could not be confirmed on screen or in the catalog.",
+            signals_restriction=False,
+        )
+
+    notices = [n.strip() for n in sig.notices if n and n.strip()]
+    blocked = [(n, _notice_status(n)) for n in notices]
+    blockers = {st for _, st in blocked if st is not None}
+    for status in _BLOCKER_PRECEDENCE:
+        if status in blockers:
+            said = [n for n, st in blocked if st is not None]
+            return Verdict(
+                status=status,
+                rule_id=f"BROWSER_{status.value}",
+                rationale="Seller Central showed: " + " | ".join(f"'{n}'" for n in said),
+                source=obs.source,
+                messages=said,
+            )
+
+    if _norm(sig.selected_condition) != _norm(ctx.condition):
+        return _ambiguous(
+            obs,
+            "BROWSER_CONDITION_NOT_SELECTED",
+            f"Condition {ctx.condition} is not selected "
+            f"(shown: {sig.selected_condition or 'none'}), so the sell control says nothing yet.",
+            signals_restriction=False,
+        )
+
+    target_family = _condition_family(ctx.condition)
+    for notice in notices:
+        families = _limitation_families(notice)
+        if families is None:
+            return _ambiguous(
+                obs,
+                "BROWSER_UNRECOGNIZED_NOTICE",
+                f"Unrecognised notice in the panel: '{notice}'.",
+                messages=[notice],
+            )
+        if target_family in families:
+            return _ambiguous(
+                obs,
+                "BROWSER_LISTING_LIMITATION",
+                f"A listing limitation applies to the {target_family} condition: '{notice}'.",
+                messages=[notice],
+            )
+        # otherwise it is about other conditions and does not apply to this check
+
+    label = _norm(sig.action_label)
+    if label in _APPLY_LABELS:
+        return Verdict(
+            status=EligibilityStatus.OTHER_APPROVAL_REQUIRED,
+            rule_id="BROWSER_APPLY_TO_SELL",
+            rationale="Seller Central offers 'Apply to sell' instead of 'Sell this product', "
+            "so approval is needed; no message said whether it is for the brand.",
+            source=obs.source,
+        )
+    if label in _SELL_LABELS:
+        if sig.action_enabled is True:
+            return Verdict(
+                status=EligibilityStatus.VERIFIED_LISTABLE,
+                rule_id="BROWSER_SELL_ENABLED",
+                rationale=(
+                    f"For ASIN {ctx.asin}, condition {ctx.condition}, 'Sell this product' is "
+                    "enabled and no restriction notice applies."
+                ),
+                source=obs.source,
+            )
+        return _ambiguous(
+            obs,
+            "BROWSER_ACTION_DISABLED",
+            "'Sell this product' is shown but is not enabled; listing is not confirmed.",
+        )
+    return _ambiguous(
+        obs,
+        "BROWSER_NO_RECOGNISED_ACTION",
+        f"No recognised sell control was found (saw {sig.action_label!r}).",
+    )
+
+
 _CLASSIFIERS: dict[ObservationSource, Callable[[Observation], Verdict]] = {
     ObservationSource.SP_API_RESTRICTIONS: classify_sp_api,
+    ObservationSource.BROWSER: classify_browser,
+    ObservationSource.MANUAL: classify_browser,  # a reviewer records the same screen state
 }
 
 
@@ -254,6 +445,16 @@ def combine_verdicts(verdicts: Sequence[Verdict]) -> Classification:
             "; ".join(dict.fromkeys(v.rationale for v in verdicts)),
         )
 
+    # Ambiguity that carries no information about this ASIN (wrong product on screen, condition
+    # not chosen, ASIN unknown to the API) is not a contradiction. Drop it if anything informs.
+    informative = [
+        v
+        for v in usable
+        if v.status != EligibilityStatus.NEEDS_MANUAL_CHECK or v.signals_restriction
+    ]
+    if informative:
+        usable = informative
+
     statuses = {v.status for v in usable}
     if EligibilityStatus.VERIFIED_LISTABLE in statuses and len(statuses) > 1:
         # One source says "listable" while another says blocked or unsure: never pick a side.
@@ -274,6 +475,11 @@ def combine_verdicts(verdicts: Sequence[Verdict]) -> Classification:
 
     winner_status = next(iter(statuses))
     chosen = [v for v in usable if v.status == winner_status]
+    if winner_status == EligibilityStatus.NEEDS_MANUAL_CHECK and len(chosen) > 1:
+        # Still unresolved after several sources: lead with the most recent evidence, which is
+        # what a reviewer needs to see ("why was my entry not enough?"), and keep every reason.
+        why = " | ".join(dict.fromkeys(v.rationale for v in reversed(chosen)))
+        return _merge(chosen, winner_status, chosen[-1].rule_id, why)
     return _merge(chosen, winner_status, chosen[0].rule_id, chosen[0].rationale)
 
 

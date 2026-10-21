@@ -85,6 +85,10 @@ class SellerAccount(Base):
     api_key_hash: Mapped[str] = mapped_column(String(64), unique=True)
     api_key_prefix: Mapped[str] = mapped_column(String(12))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Autonomous browser verification is opt-in per seller: when and under which wording they
+    # confirmed that Amazon's current terms permit it for their account.
+    browser_ack_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    browser_ack_version: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
@@ -323,3 +327,20 @@ class OAuthState(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
     used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class BrowserSession(Base):
+    """A seller's Seller Central browser session (Playwright storage state), encrypted at rest.
+
+    Created by a person signing in manually; this application never sees or stores a password.
+    """
+
+    __tablename__ = "browser_sessions"
+
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_accounts.id"), primary_key=True
+    )
+    state_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)

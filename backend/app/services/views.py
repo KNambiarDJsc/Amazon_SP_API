@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.domain.conditions import label_for
 from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus
 from app.models import (
     AuditEvent,
@@ -24,6 +25,7 @@ from app.schemas import (
     JobSettings,
     ObservationOut,
     Page,
+    ReviewItem,
 )
 from app.services.jobs import JobNotFound, job_progress
 
@@ -197,3 +199,80 @@ def list_events(session: Session, job_id: uuid.UUID, limit: int) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def review_queue(
+    session: Session, job_id: uuid.UUID, seller_central_url: str, limit: int, offset: int
+) -> Page[ReviewItem]:
+    """Everything a person still has to look at: ASIN checks the machine could not settle, and
+    brands that found nothing, failed, or were too thinly sampled."""
+    items: list[ReviewItem] = []
+
+    check_rows = session.execute(
+        select(EligibilityCheck, JobBrand, CatalogCandidate.title)
+        .join(JobBrand, JobBrand.id == EligibilityCheck.job_brand_id)
+        .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
+        .where(
+            EligibilityCheck.job_id == job_id,
+            EligibilityCheck.state == CheckState.DONE,
+            EligibilityCheck.status == EligibilityStatus.NEEDS_MANUAL_CHECK,
+        )
+        .order_by(JobBrand.position, CatalogCandidate.rank, EligibilityCheck.condition)
+    ).all()
+    for check, brand, title in check_rows:
+        label = label_for(check.condition)
+        items.append(
+            ReviewItem(
+                kind="CHECK",
+                brand_id=brand.id,
+                brand=brand.display_name,
+                check_id=check.id,
+                asin=check.asin,
+                title=title,
+                condition=check.condition,
+                status=check.status,
+                rule_id=check.rule_id,
+                rationale=check.rationale,
+                actions=["record_evidence", "recheck"],
+                how_to=[
+                    f"In Seller Central, open the product panel for ASIN {check.asin}.",
+                    f"Choose the condition '{label}' in the dropdown. Do not click Sell, "
+                    "Apply to sell or Copy listing.",
+                    "Record exactly what is on screen: the ASIN shown, the condition selected, "
+                    "the primary button's label and whether it is enabled, and the text of "
+                    "every notice.",
+                ],
+                seller_central_url=seller_central_url,
+            )
+        )
+
+    brand_rows = session.scalars(
+        select(JobBrand)
+        .where(
+            JobBrand.job_id == job_id,
+            JobBrand.brand_status.in_(
+                [EligibilityStatus.NO_PRODUCT_FOUND, EligibilityStatus.NEEDS_MANUAL_CHECK]
+            ),
+        )
+        .order_by(JobBrand.position)
+    ).all()
+    for brand in brand_rows:
+        summary = brand.brand_summary or {}
+        items.append(
+            ReviewItem(
+                kind="BRAND",
+                brand_id=brand.id,
+                brand=brand.display_name,
+                status=brand.brand_status,
+                rule_id=summary.get("rule_id"),
+                rationale=(summary.get("rationale") or "")
+                + (f" Last error: {brand.last_error}" if brand.last_error else ""),
+                actions=["retry_brand"],
+                how_to=[
+                    "Check the brand's spelling as Amazon writes it, then retry.",
+                    "Use 'rediscover' to search the catalog again from the start.",
+                ],
+            )
+        )
+
+    return Page(items=items[offset : offset + limit], total=len(items), limit=limit, offset=offset)

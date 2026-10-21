@@ -295,7 +295,10 @@ def test_all_sources_unusable_reports_manual_check():
     assert c.status == S.NEEDS_MANUAL_CHECK and c.rule_id == "SPAPI_TIMEOUT"
 
 
-def test_source_without_rules_is_never_listable():
+def test_source_without_rules_is_never_listable(monkeypatch):
+    from app.domain import classification
+
+    monkeypatch.delitem(classification._CLASSIFIERS, ObservationSource.MANUAL)
     o = Observation(source=ObservationSource.MANUAL, context=CTX)
     v = classify_observation(o)
     assert v.status == S.NEEDS_MANUAL_CHECK and v.rule_id == "NO_CLASSIFIER"

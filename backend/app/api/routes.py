@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_seller, db_dep, dispatcher_dep, settings_dep
 from app.config import Settings
-from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus
+from app.domain.observations import BrowserSignals
+from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus, ObservationSource
 from app.models import SellerAccount, SellerCredential
 from app.schemas import (
     BrandOut,
@@ -20,9 +21,12 @@ from app.schemas import (
     JobCreateRequest,
     JobOut,
     JobSettings,
+    ManualEvidenceIn,
     Page,
+    RetryBrandIn,
+    ReviewItem,
 )
-from app.services import orchestration, views
+from app.services import orchestration, review, views
 from app.services.dispatch import Dispatcher
 from app.services.ingestion import (
     IngestionError,
@@ -238,6 +242,106 @@ def read_check(job_id: uuid.UUID, check_id: uuid.UUID, seller: Seller, db: Db):
         return views.check_detail(db, job_id, check_id)
     except JobNotFound:
         raise HTTPException(404, "Check not found.") from None
+
+
+@router.get("/jobs/{job_id}/review-queue", response_model=Page[ReviewItem], responses=NOT_FOUND)
+def review_queue(
+    job_id: uuid.UUID, seller: Seller, db: Db, cfg: Cfg, limit: Limit = 50, offset: Offset = 0
+):
+    _owned_job(db, seller, job_id)
+    return views.review_queue(db, job_id, cfg.seller_central_url, limit, offset)
+
+
+@router.post(
+    "/jobs/{job_id}/checks/{check_id}/manual-evidence",
+    response_model=CheckDetailOut,
+    responses={**NOT_FOUND, 409: {"model": ErrorOut}},
+)
+def add_manual_evidence(
+    job_id: uuid.UUID, check_id: uuid.UUID, body: ManualEvidenceIn, seller: Seller, db: Db
+):
+    """Record what you saw in Seller Central. The status is derived from it, never supplied."""
+    _owned_job(db, seller, job_id)
+    try:
+        check = review.get_check(db, job_id, check_id)
+        review.record_screen_evidence(
+            db,
+            check,
+            source=ObservationSource.MANUAL,
+            observer=f"api-key:{seller.api_key_prefix}",
+            signals=BrowserSignals(
+                page_asin=body.page_asin,
+                page_brand=body.page_brand,
+                selected_condition=body.selected_condition,
+                notices=body.notices,
+                action_label=body.action_label,
+                action_enabled=body.action_enabled,
+                product_unavailable=body.product_unavailable,
+            ),
+            note=body.note,
+        )
+        db.commit()
+    except review.ReviewError as exc:
+        db.rollback()
+        raise HTTPException(404 if "not found" in str(exc) else 409, str(exc)) from None
+    return views.check_detail(db, job_id, check_id)
+
+
+@router.post(
+    "/jobs/{job_id}/checks/{check_id}/recheck",
+    response_model=CheckDetailOut,
+    responses={**NOT_FOUND, 409: {"model": ErrorOut}},
+)
+def recheck(
+    job_id: uuid.UUID,
+    check_id: uuid.UUID,
+    seller: Seller,
+    db: Db,
+    cfg: Cfg,
+    dispatcher: Dispatch,
+):
+    """Ask Amazon's API about this ASIN again (earlier evidence is kept as history)."""
+    _owned_job(db, seller, job_id)
+    try:
+        orchestration.recheck_check(dispatcher, cfg, seller.id, job_id, check_id)
+    except JobNotFound:
+        raise HTTPException(404, "Check not found.") from None
+    except JobStateError as exc:
+        raise HTTPException(409, str(exc)) from None
+    db.expire_all()
+    return views.check_detail(db, job_id, check_id)
+
+
+@router.post(
+    "/jobs/{job_id}/brands/{brand_id}/retry",
+    response_model=JobOut,
+    responses={**NOT_FOUND, 409: {"model": ErrorOut}},
+)
+def retry_brand(
+    job_id: uuid.UUID,
+    brand_id: uuid.UUID,
+    seller: Seller,
+    db: Db,
+    cfg: Cfg,
+    dispatcher: Dispatch,
+    body: RetryBrandIn | None = None,
+):
+    _owned_job(db, seller, job_id)
+    try:
+        orchestration.retry_brand(
+            dispatcher,
+            cfg,
+            seller.id,
+            job_id,
+            brand_id,
+            rediscover=body.rediscover if body else False,
+        )
+    except JobNotFound:
+        raise HTTPException(404, "Brand not found.") from None
+    except JobStateError as exc:
+        raise HTTPException(409, str(exc)) from None
+    db.expire_all()
+    return views.job_out(db, _owned_job(db, seller, job_id))
 
 
 @router.get("/jobs/{job_id}/events", responses=NOT_FOUND)

@@ -2,9 +2,16 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Generic, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.domain.observations import ApprovalLink
 from app.domain.summary import BrandSummary
@@ -205,3 +212,54 @@ class Page(BaseModel, Generic[T]):
 
 class ErrorOut(BaseModel):
     detail: str
+
+
+# ---- manual review -------------------------------------------------------------------------
+
+Notice = Annotated[str, StringConstraints(max_length=500)]
+
+
+class ManualEvidenceIn(BaseModel):
+    """What the reviewer saw on the Seller Central product panel. Observations, not a verdict."""
+
+    model_config = ConfigDict(extra="forbid")  # a client cannot smuggle in a `status`
+
+    page_asin: str = Field(pattern=r"^[A-Za-z0-9]{10}$", description="ASIN shown on the panel")
+    selected_condition: Condition | None = Field(
+        default=None, description="Condition chosen in the panel's dropdown; null if none"
+    )
+    action_label: str | None = Field(
+        default=None, max_length=60, description="Primary button, e.g. 'Sell this product'"
+    )
+    action_enabled: bool | None = None
+    notices: list[Notice] = Field(
+        default_factory=list, max_length=10, description="Exact text of every notice in the panel"
+    )
+    page_brand: str | None = Field(default=None, max_length=200)
+    product_unavailable: bool = False
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("page_asin")
+    @classmethod
+    def _upper(cls, v: str) -> str:
+        return v.upper()
+
+
+class ReviewItem(BaseModel):
+    kind: Literal["CHECK", "BRAND"]
+    brand_id: uuid.UUID
+    brand: str
+    check_id: uuid.UUID | None = None
+    asin: str | None = None
+    title: str | None = None
+    condition: str | None = None
+    status: EligibilityStatus
+    rule_id: str | None = None
+    rationale: str | None = None
+    actions: list[str]
+    how_to: list[str]
+    seller_central_url: str | None = None
+
+
+class RetryBrandIn(BaseModel):
+    rediscover: bool = Field(default=False, description="Search the catalog again from the start")

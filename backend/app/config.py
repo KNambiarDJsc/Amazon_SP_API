@@ -34,6 +34,21 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 20.0
     oauth_state_ttl_seconds: int = 900
 
+    # --- Optional browser verification: OFF by default; read docs/BROWSER_VERIFICATION.md first.
+    browser_automation_enabled: bool = False
+    # Who operates this agent; sent in the User-Agent so Amazon can identify the operator.
+    browser_agent_contact: str = ""
+    browser_executable_path: str = ""  # empty: Playwright's own Chromium
+    browser_headless: bool = True
+    browser_launch_args: str = ""  # comma-separated extra Chromium flags (e.g. --no-sandbox in CI)
+    # The page that hosts the "search your catalogue" box. Calibrate against your live account.
+    browser_listing_url: str = "https://sellercentral.amazon.in/product-search"
+    browser_timeout_ms: int = 15_000
+    browser_max_attempts: int = 2
+    browser_min_interval_seconds: float = 4.0  # pause between ASINs: this is a person's pace
+    browser_screenshots: bool = True
+    evidence_dir: str = "var/evidence"
+
     # SP-API usage plans differ per operation and seller; these are conservative defaults.
     # Verify against the current usage plan of the account before raising them.
     # Amazon's own pages disagree on searchCatalogItems (2/s vs 5/s); stay conservative.

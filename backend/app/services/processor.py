@@ -407,6 +407,7 @@ class BrandProcessor:
             condition=check.condition,
             seller_ref=ctx.seller_ref,
             expected_brand=ctx.display_name,
+            brand_validated=True,  # only brand-matched candidates are ever selected for checking
         )
         try:
             body = client.get_listings_restrictions(

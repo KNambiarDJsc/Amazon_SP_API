@@ -42,7 +42,32 @@ Several blockers on one ASIN: `NOT_ELIGIBLE` > `BRAND_APPROVAL_REQUIRED` > `OTHE
 Sources that disagree, or one saying "listable" while another is ambiguous, give `NEEDS_MANUAL_CHECK`
 (`SOURCE_CONFLICT`). A source that produced *no answer* never overrides a real answer.
 
-**Invariant, enforced by a 3,000-case randomised test:** `VERIFIED_LISTABLE` is produced only for a
+### Classification rules (screen evidence: browser adapter or a human reviewer)
+
+Both record the same `BrowserSignals` and are classified by the same rules; a reviewer records what
+they *saw*, not a verdict. Checked in this order:
+
+| Signals | Derived |
+|---|---|
+| signed out / challenge / page not loaded / failed outcome | no usable answer (`NEEDS_MANUAL_CHECK`) |
+| product unavailable | `NEEDS_MANUAL_CHECK` |
+| ASIN on screen is not the requested one; brand on screen differs; brand unconfirmed anywhere | `NEEDS_MANUAL_CHECK`, **no information** (evidence about another product is never used) |
+| approval notice naming the brand / otherwise; "not eligible" notice | `BRAND_APPROVAL_REQUIRED` / `OTHER_APPROVAL_REQUIRED` / `NOT_ELIGIBLE` |
+| target condition not selected | `NEEDS_MANUAL_CHECK` (the sell control says nothing yet) |
+| `"<Used, Collectible…> conditions: …"` notice that names the target condition; any unrecognised notice | `NEEDS_MANUAL_CHECK` (a restriction may exist) |
+| *Apply to sell* shown | `OTHER_APPROVAL_REQUIRED` |
+| *Sell this product* **enabled**, everything above clear | `VERIFIED_LISTABLE` |
+| *Sell this product* disabled / no recognised control | `NEEDS_MANUAL_CHECK` |
+
+**Combining sources.** Per source, only the latest observation counts. "No information" ambiguity
+(an ASIN the API does not know, a screen about another product, a condition not chosen) is dropped
+when anything informative exists, so a person's screen evidence can resolve what the API could not.
+Ambiguity that *suggests a restriction* (an unrecognised reason code, an applicable limitation) and
+any disagreement between conclusive answers become `SOURCE_CONFLICT`: never resolved by whoever
+spoke last. A second randomised test (6,000 cases) asserts `VERIFIED_LISTABLE` is produced only when
+every positive condition holds.
+
+**Invariant, enforced by a 3,000-case randomised test (API evidence):** `VERIFIED_LISTABLE` is produced only for a
 literally empty `restrictions` list in an otherwise well-formed response.
 
 ### Brand-level summary

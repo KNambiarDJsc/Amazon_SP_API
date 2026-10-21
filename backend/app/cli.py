@@ -67,6 +67,108 @@ def connect_seller(args: argparse.Namespace) -> int:
     return 0
 
 
+def browser_acknowledge(args: argparse.Namespace) -> int:
+    import uuid
+
+    from app.browser.policy import ACK_TEXT, ACK_VERSION
+    from app.domain.observations import utcnow
+    from app.models import SellerAccount
+    from app.services import audit
+
+    print(ACK_TEXT)
+    if not args.i_confirm:
+        print("Not recorded. Re-run with --i-confirm once every statement above is true.")
+        return 1
+    with session_scope() as session:
+        seller = session.get(SellerAccount, uuid.UUID(args.seller_account))
+        if seller is None:
+            print("No such seller account.", file=sys.stderr)
+            return 1
+        seller.browser_ack_at, seller.browser_ack_version = utcnow(), ACK_VERSION
+        audit.record(
+            session,
+            seller_account_id=seller.id,
+            event_type="BROWSER_POLICY_ACKNOWLEDGED",
+            version=ACK_VERSION,
+        )
+    print("Acknowledgement recorded.")
+    return 0
+
+
+def _browser_context(args: argparse.Namespace):
+    from app.browser.factory import PlaywrightFactory
+    from app.services.credentials import CredentialCipher
+
+    cfg = get_settings()
+    cipher = CredentialCipher.from_setting(cfg.credential_encryption_keys.get_secret_value())
+    return cfg, cipher, PlaywrightFactory(cfg, headless=False if args.headed else None)
+
+
+def browser_login(args: argparse.Namespace) -> int:
+    """A person signs in in a visible browser; this never types credentials."""
+    import uuid
+
+    from app.browser.runner import login_interactively
+
+    args.headed = True
+    cfg, cipher, factory = _browser_context(args)
+    login_interactively(
+        seller_id=uuid.UUID(args.seller_account),
+        cfg=cfg,
+        cipher=cipher,
+        factory=factory,
+        wait_for_person=lambda _h: input(
+            "Sign in to Seller Central in the browser window (including any verification step),\n"
+            "then press Enter here to save the session: "
+        ),
+    )
+    print("Session saved (encrypted).")
+    return 0
+
+
+def browser_forget(args: argparse.Namespace) -> int:
+    """Delete the seller's saved Seller Central session. Use this when Amazon asks you to stop, or
+    when you no longer want the agent able to browse as this seller."""
+    import uuid
+
+    from app.browser.session_store import delete_state
+    from app.services import audit
+
+    seller_id = uuid.UUID(args.seller_account)
+    with session_scope() as session:
+        removed = delete_state(session, seller_id)
+        if removed:
+            audit.record(session, seller_account_id=seller_id, event_type="BROWSER_SESSION_DELETED")
+    print("Saved session deleted." if removed else "There was no saved session.")
+    return 0
+
+
+def browser_verify(args: argparse.Namespace) -> int:
+    import uuid
+
+    from app.browser.policy import BrowserNotPermitted
+    from app.browser.runner import BrowserBusy, run_browser_verification
+
+    cfg, cipher, factory = _browser_context(args)
+    try:
+        stats = run_browser_verification(
+            seller_id=uuid.UUID(args.seller_account),
+            job_id=uuid.UUID(args.job),
+            cfg=cfg,
+            cipher=cipher,
+            factory=factory,
+            limit=args.limit,
+        )
+    except (BrowserNotPermitted, BrowserBusy) as exc:
+        print(f"Not run: {exc}", file=sys.stderr)
+        return 1
+    print(stats)
+    if stats.stopped:
+        print(f"Stopped: Seller Central showed a {stats.stopped} prompt. A person must handle it.")
+        return 2
+    return 0
+
+
 def run_recovery(args: argparse.Namespace) -> int:
     from app.services.dispatch import recover
     from app.workers.runtime import get_runtime
@@ -147,6 +249,26 @@ def main(argv: list[str] | None = None) -> int:
         "--refresh-token-file", help="read the refresh token from this file (else stdin)"
     )
     p.set_defaults(func=connect_seller)
+
+    p = sub.add_parser("browser-acknowledge", help="record the seller's Agent Policy confirmation")
+    p.add_argument("--seller-account", required=True)
+    p.add_argument("--i-confirm", action="store_true", help="every statement printed is true")
+    p.set_defaults(func=browser_acknowledge)
+
+    p = sub.add_parser("browser-login", help="a person signs in to Seller Central; session saved")
+    p.add_argument("--seller-account", required=True)
+    p.set_defaults(func=browser_login)
+
+    p = sub.add_parser("browser-forget", help="delete the seller's saved browser session")
+    p.add_argument("--seller-account", required=True)
+    p.set_defaults(func=browser_forget)
+
+    p = sub.add_parser("browser-verify", help="verify a job's unresolved checks (policy-gated)")
+    p.add_argument("--seller-account", required=True)
+    p.add_argument("--job", required=True)
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--headed", action="store_true", help="show the browser window")
+    p.set_defaults(func=browser_verify)
 
     p = sub.add_parser("recover", help="repair interrupted work and refill dispatch windows")
     p.add_argument("--loop", type=float, metavar="SECONDS", help="repeat every N seconds")
