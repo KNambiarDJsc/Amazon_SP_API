@@ -22,6 +22,77 @@ def create_seller(args: argparse.Namespace) -> int:
     return 0
 
 
+def _account_command(args: argparse.Namespace, action):
+    """Run `action(session, account_id)`, turning a bad id into a clear error."""
+    import uuid
+
+    from app.services.accounts import AccountNotFound
+
+    try:
+        account_id = uuid.UUID(args.seller_account)
+    except ValueError:
+        print("--seller-account must be the account UUID (see list-sellers).", file=sys.stderr)
+        return 1
+    try:
+        with session_scope() as session:
+            return action(session, account_id)
+    except AccountNotFound:
+        print("No such seller account.", file=sys.stderr)
+        return 1
+
+
+def list_sellers(_args: argparse.Namespace) -> int:
+    from sqlalchemy import select
+
+    from app.models import SellerCredential
+    from app.services.accounts import list_accounts
+
+    with session_scope() as session:
+        connected = {
+            c.seller_account_id: c.status for c in session.scalars(select(SellerCredential))
+        }
+        for a in list_accounts(session):
+            print(
+                f"{a.id}  {'active  ' if a.is_active else 'INACTIVE'}  key {a.api_key_prefix}…  "
+                f"amazon: {connected.get(a.id, 'not connected')}  {a.name}"
+            )
+    return 0
+
+
+def rotate_key(args: argparse.Namespace) -> int:
+    from app.services.accounts import rotate_api_key
+
+    def action(session, account_id):
+        _, key = rotate_api_key(session, account_id)
+        print("The previous API key no longer works.")
+        print(f"New API key (shown once, store it safely): {key}")
+        return 0
+
+    return _account_command(args, action)
+
+
+def deactivate_seller(args: argparse.Namespace) -> int:
+    from app.services.accounts import deactivate
+
+    def action(session, account_id):
+        paused = deactivate(session, account_id)
+        print(f"Seller deactivated; API access revoked; {paused} running job(s) paused.")
+        return 0
+
+    return _account_command(args, action)
+
+
+def activate_seller(args: argparse.Namespace) -> int:
+    from app.services.accounts import activate
+
+    def action(session, account_id):
+        activate(session, account_id)
+        print("Seller activated. Paused jobs stay paused until the seller resumes them.")
+        return 0
+
+    return _account_command(args, action)
+
+
 def generate_encryption_key(_args: argparse.Namespace) -> int:
     from app.services.credentials import generate_key
 
@@ -238,6 +309,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name", required=True)
     p.add_argument("--marketplace", default="A21TJRUUN4KGV")
     p.set_defaults(func=create_seller)
+
+    p = sub.add_parser("list-sellers", help="list seller accounts (id, state, key prefix)")
+    p.set_defaults(func=list_sellers)
+
+    for name, func, text in (
+        ("rotate-key", rotate_key, "issue a new API key; the old one stops working immediately"),
+        ("deactivate-seller", deactivate_seller, "revoke API access and pause running jobs"),
+        ("activate-seller", activate_seller, "restore API access"),
+    ):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--seller-account", required=True, help="seller account UUID")
+        p.set_defaults(func=func)
 
     p = sub.add_parser("generate-encryption-key", help="print a new CREDENTIAL_ENCRYPTION_KEYS key")
     p.set_defaults(func=generate_encryption_key)

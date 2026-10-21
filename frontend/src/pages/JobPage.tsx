@@ -222,7 +222,7 @@ function Header({ job }: { job: Job }) {
           </p>
         </div>
         <div className="flex gap-2">
-          {(job.status === "RUNNING" || job.status === "QUEUED") && (
+          {job.status === "RUNNING" && (
             <Button onClick={() => pause.mutate()} disabled={pause.isPending}>
               Pause
             </Button>

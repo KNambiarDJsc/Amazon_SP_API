@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
+// E2E_BASE_URL points the suite at an already-running deployment (see scripts/e2e_compose.sh);
+// otherwise it boots the backend and the built dashboard itself.
+const external = process.env.E2E_BASE_URL;
+
 const API = "http://127.0.0.1:8788";
 const WEB = "http://127.0.0.1:4188";
 
@@ -16,26 +20,28 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"]],
   use: {
-    baseURL: WEB,
+    baseURL: external ?? WEB,
     trace: "retain-on-failure",
     acceptDownloads: true,
     launchOptions: { executablePath, args: ["--no-sandbox"] },
   },
-  webServer: [
-    {
-      // The real backend: PostgreSQL, Redis, the Dramatiq worker and the API, on the offline mock.
-      command: "bash e2e/stack/run.sh",
-      url: `${API}/readyz`,
-      timeout: 120_000,
-      reuseExistingServer: false,
-    },
-    {
-      // The production build of the dashboard, proxying /api to that backend.
-      command: "npx vite build && npx vite preview --port 4188 --strictPort",
-      url: WEB,
-      timeout: 120_000,
-      reuseExistingServer: false,
-      env: { API_URL: API },
-    },
-  ],
+  webServer: external
+    ? undefined
+    : [
+        {
+          // The real backend: PostgreSQL, Redis, the Dramatiq worker and the API, on the offline mock.
+          command: "bash e2e/stack/run.sh",
+          url: `${API}/readyz`,
+          timeout: 120_000,
+          reuseExistingServer: false,
+        },
+        {
+          // The production build of the dashboard, proxying /api to that backend.
+          command: "npx vite build && npx vite preview --port 4188 --strictPort",
+          url: WEB,
+          timeout: 120_000,
+          reuseExistingServer: false,
+          env: { API_URL: API },
+        },
+      ],
 });

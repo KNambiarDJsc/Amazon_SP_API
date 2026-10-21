@@ -1,5 +1,6 @@
 import json
 import logging
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -439,3 +440,80 @@ def test_tracing_is_off_unless_configured(engine):
     from app.telemetry import setup_tracing
 
     assert setup_tracing(create_app(Settings(database_url="sqlite://"))) is False
+
+
+def test_metric_files_from_different_containers_cannot_collide(tmp_path):
+    """Two containers can have the same PID. Their metrics must still land in separate files and
+    add up, not overwrite each other. A subprocess per "container" keeps the PID namespace honest
+    (the same code path, different HOSTNAME)."""
+    import subprocess
+    import sys
+
+    script = (
+        "import sys\n"
+        "from app.observability import BRAND_TASKS, metrics_registry\n"
+        "from prometheus_client import generate_latest\n"
+        "BRAND_TASKS.labels(result='completed').inc(int(sys.argv[1]))\n"
+    )
+
+    def run(host, amount):
+        env = {
+            "PATH": "",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            "HOSTNAME": host,
+            "PROMETHEUS_MULTIPROC_DIR": str(tmp_path),
+        }
+        subprocess.run([sys.executable, "-c", script, str(amount)], env=env, check=True)
+
+    run("api-container", 3)
+    run("worker-container", 4)
+
+    files = sorted(p.name for p in tmp_path.glob("*.db"))
+    assert any("api-container" in f for f in files) and any("worker-container" in f for f in files)
+
+    from prometheus_client import CollectorRegistry, generate_latest, multiprocess
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry, path=str(tmp_path))
+    text = generate_latest(registry).decode()
+    assert 'eligibility_brand_tasks_total{result="completed"} 7.0' in text
+
+
+def test_a_restarted_service_continues_its_own_metric_file(tmp_path):
+    """Files are named by service and PID, so a restart (same name, same PID) reopens the same file
+    and its counters carry on; and two services with the same PID still do not collide."""
+    import subprocess
+    import sys
+
+    script = (
+        "import os, sys\n"
+        "os.getpid = lambda: 4242\n"  # the same PID in every "container"
+        "from app.observability import BRAND_TASKS\n"
+        "BRAND_TASKS.labels(result='completed').inc(int(sys.argv[1]))\n"
+    )
+
+    def run(instance, amount):
+        env = {
+            "PATH": "",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            "METRICS_INSTANCE": instance,
+            "HOSTNAME": "some-random-container-id",
+            "PROMETHEUS_MULTIPROC_DIR": str(tmp_path),
+        }
+        subprocess.run([sys.executable, "-c", script, str(amount)], env=env, check=True)
+
+    run("worker", 3)
+    run("api", 10)  # same PID, different service
+    run("worker", 4)  # the worker "restarts"
+
+    assert sorted(p.name for p in tmp_path.glob("counter_*.db")) == [
+        "counter_api-4242.db",
+        "counter_worker-4242.db",
+    ]
+
+    from prometheus_client import CollectorRegistry, generate_latest, multiprocess
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry, path=str(tmp_path))
+    text = generate_latest(registry).decode()
+    assert 'eligibility_brand_tasks_total{result="completed"} 17.0' in text  # 3 + 4 + 10

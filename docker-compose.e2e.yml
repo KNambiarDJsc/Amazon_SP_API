@@ -1,0 +1,20 @@
+# Overrides for the end-to-end acceptance run (frontend/e2e) against the full compose stack:
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml --env-file .env.e2e up -d
+# Plain HTTP on a local port (no certificates), the offline Amazon mock, fast rate limits, and a
+# low direct-export limit so the tests exercise both export paths.
+services:
+  api:
+    environment:
+      EXPORT_SYNC_MAX_CHECKS: "11"
+  worker:
+    environment:
+      EXPORT_SYNC_MAX_CHECKS: "11"
+      RATE_SEARCH_CATALOG_PER_SEC: "1000"
+      RATE_SEARCH_CATALOG_BURST: "1000"
+      RATE_RESTRICTIONS_PER_SEC: "1000"
+      RATE_RESTRICTIONS_BURST: "1000"
+  web:
+    environment:
+      SITE_ADDRESS: ":80"
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"

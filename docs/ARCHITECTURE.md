@@ -239,5 +239,18 @@ SP-API usage plan and checking fewer ASINs per brand (the job's `max_asins_per_b
   exceeds it), per-key API rate limiting, authentication-failure throttling per client address (both
   fail open if Redis is down, because a limiter outage must not become an API outage), API docs disabled
   when `ENVIRONMENT=production`.
-* **Still not built:** user login/SSO (the dashboard uses the seller API key), key rotation UI, audit
-  log export, secret-manager integration beyond environment variables.
+* Deployment hardening (non-root, read-only containers, network segmentation, proxy-header trust, CSP,
+  backups) and the remaining gaps (no user accounts/SSO, unencrypted backups, secrets in an env file) are
+  in [SECURITY.md](SECURITY.md).
+
+## 9. Deployment
+
+Caddy -> API -> PostgreSQL/Redis, Dramatiq workers, optional Prometheus/Grafana: see
+[DEPLOY.md](DEPLOY.md). Two design points worth knowing:
+
+* **Metric files are named `<service>-<pid>`** (`METRICS_INSTANCE`), not by PID alone. Containers have
+  separate PID namespaces, so two containers sharing a metrics volume would otherwise overwrite each other's
+  counters. The name is stable so a restart continues its own counters and files do not accumulate; the price is
+  one container per service name.
+* **The API trusts `X-Forwarded-For` from exactly one address** (Caddy's, pinned in the compose network),
+  because per-client throttling is meaningless if every client appears to be the proxy.

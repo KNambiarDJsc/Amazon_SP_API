@@ -1,0 +1,230 @@
+# Production-style deployment: Caddy (TLS) -> API -> PostgreSQL / Redis, with Dramatiq workers.
+#
+#   cp .env.example .env     # set the required secrets (see docs/DEPLOY.md)
+#   docker compose up -d --build
+#   docker compose run --rm api python -m app.cli create-seller --name "My company"
+#
+# Optional monitoring (Prometheus + Grafana):  docker compose --profile monitoring up -d
+
+name: eligibility
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-hardening: &hardening
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging: *logging
+
+x-backend: &backend
+  <<: *hardening
+  image: eligibility-backend:${IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: docker/backend.Dockerfile
+    args:
+      EXTRAS: ${BACKEND_EXTRAS:-}
+      WITH_BROWSER: ${WITH_BROWSER:-0}
+  environment: &backend-env
+    ENVIRONMENT: production
+    LOG_JSON: "true"
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    DATABASE_URL: postgresql+psycopg://eligibility:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/eligibility
+    REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
+    ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+    # uvicorn honours X-Forwarded-For only from the proxy at this fixed address (see networks).
+    FORWARDED_ALLOW_IPS: 172.29.0.10
+    METRICS_TOKEN: ${METRICS_TOKEN:-}
+    AMAZON_MODE: ${AMAZON_MODE:-mock}
+    MARKETPLACE_ID: ${MARKETPLACE_ID:-A21TJRUUN4KGV}
+    CREDENTIAL_ENCRYPTION_KEYS: ${CREDENTIAL_ENCRYPTION_KEYS:-}
+    LWA_CLIENT_ID: ${LWA_CLIENT_ID:-}
+    LWA_CLIENT_SECRET: ${LWA_CLIENT_SECRET:-}
+    SP_API_APPLICATION_ID: ${SP_API_APPLICATION_ID:-}
+    OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
+    SP_API_DRAFT_APP: ${SP_API_DRAFT_APP:-false}
+    RATE_SEARCH_CATALOG_PER_SEC: ${RATE_SEARCH_CATALOG_PER_SEC:-2}
+    RATE_SEARCH_CATALOG_BURST: ${RATE_SEARCH_CATALOG_BURST:-2}
+    RATE_RESTRICTIONS_PER_SEC: ${RATE_RESTRICTIONS_PER_SEC:-5}
+    RATE_RESTRICTIONS_BURST: ${RATE_RESTRICTIONS_BURST:-10}
+    SELLER_MAX_CONCURRENT_BRANDS: ${SELLER_MAX_CONCURRENT_BRANDS:-2}
+    EXPORT_SYNC_MAX_CHECKS: ${EXPORT_SYNC_MAX_CHECKS:-10000}
+    BROWSER_AUTOMATION_ENABLED: ${BROWSER_AUTOMATION_ENABLED:-false}
+    BROWSER_AGENT_CONTACT: ${BROWSER_AGENT_CONTACT:-}
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  networks: [data, edge]
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    read_only: false # PostgreSQL writes its socket and temp files under /var/run and /tmp
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_USER: eligibility
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: eligibility
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eligibility -d eligibility"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    user: redis # not root: with every capability dropped, root could not write the data volume
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --save ""']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      METRICS_INSTANCE: api # names this service's metric files; keep one container per value
+    volumes:
+      - exports:/var/lib/eligibility/exports
+      - metrics:/var/lib/eligibility/metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      METRICS_INSTANCE: worker
+    command:
+      - dramatiq
+      - app.workers.main
+      - --processes
+      - ${WORKER_PROCESSES:-2}
+      - --threads
+      - ${WORKER_THREADS:-4}
+    # A brand task checkpoints between ASINs; give in-flight work time to reach one on shutdown.
+    stop_grace_period: 90s
+    volumes:
+      - exports:/var/lib/eligibility/exports
+      - metrics:/var/lib/eligibility/metrics
+      - evidence:/var/lib/eligibility/evidence
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, redis; redis.Redis.from_url(os.environ['REDIS_URL']).ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    <<: *hardening
+    image: eligibility-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes: [caddy_data:/data, caddy_config:/config]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      api: { condition: service_healthy }
+    networks:
+      edge:
+        ipv4_address: 172.29.0.10
+
+  # ---- optional: docker compose --profile monitoring up -d -------------------------------------
+  prometheus:
+    <<: *hardening
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.1
+    read_only: false # compose cannot place an environment-sourced secret into a read-only container
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus-rules.yml:/etc/prometheus/rules.yml:ro
+      - promdata:/prometheus
+    secrets: [metrics_token]
+    networks: [edge]
+    depends_on:
+      api: { condition: service_healthy }
+
+  grafana:
+    <<: *hardening
+    profiles: [monitoring]
+    image: grafana/grafana-oss:11.3.0
+    read_only: false
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"] # reach it through an SSH tunnel or your own proxy
+    networks: [edge]
+    depends_on: [prometheus]
+
+secrets:
+  metrics_token:
+    environment: METRICS_TOKEN
+
+networks:
+  # PostgreSQL and Redis live here only: no route to the internet and none from the edge.
+  data:
+    internal: true
+  # The API and workers also join this one so they can reach Amazon; Caddy's address is pinned so
+  # the API can trust exactly that proxy's X-Forwarded-For.
+  edge:
+    ipam:
+      config: [{ subnet: 172.29.0.0/24 }]
+
+volumes:
+  pgdata:
+  redisdata:
+  exports:
+  metrics:
+  evidence:
+  caddy_data:
+  caddy_config:
+  promdata:
+  grafanadata:

@@ -1,0 +1,74 @@
+groups:
+  - name: eligibility
+    rules:
+      - alert: EligibilityApiDown
+        expr: up{job="eligibility-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: The API is not answering Prometheus scrapes
+          description: Check `docker compose ps` and `docker compose logs api`; also verify METRICS_TOKEN matches.
+
+      - alert: EligibilityWorkerLeasesExpired
+        expr: eligibility_expired_leases > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Brand tasks are leased to workers that stopped heartbeating
+          description: Workers are crashing or hung. The recovery sweeper re-queues these; if it persists, look at worker logs.
+
+      - alert: EligibilityQueueStuck
+        expr: eligibility_oldest_queued_brand_age_seconds > 900
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: A queued brand has waited more than 15 minutes
+          description: No worker is consuming, or the seller's rate limit window is saturated. Check the worker container and Redis.
+
+      - alert: EligibilityJobsPausedForAuth
+        expr: eligibility_jobs_paused_for_auth > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Jobs are paused because Amazon credentials need attention
+          description: The seller must reconnect their Amazon account, or the app's LWA client secret is wrong (see docs/OPERATIONS.md).
+
+      - alert: EligibilityCredentialsRevoked
+        expr: eligibility_credentials_not_active > 0
+        for: 5m
+        labels: { severity: info }
+        annotations:
+          summary: A seller's Amazon authorisation was revoked and needs reconnecting
+
+      - alert: EligibilityBrandDeadLettered
+        expr: increase(eligibility_brand_tasks_total{result="dead_lettered"}[1h]) > 0
+        labels: { severity: info }
+        annotations:
+          summary: A brand exhausted its retries and went to manual review
+
+      - alert: EligibilityAmazonErrorRatio
+        expr: |
+          sum(rate(eligibility_amazon_requests_total{outcome!="ok"}[10m]))
+            / clamp_min(sum(rate(eligibility_amazon_requests_total[10m])), 0.001) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 20% of Selling Partner API calls are failing
+          description: Look at the outcome label (rate_limited, auth, request_error) on eligibility_amazon_requests_total.
+
+      - alert: EligibilityApiServerErrors
+        expr: |
+          sum(rate(eligibility_http_requests_total{status=~"5.."}[10m]))
+            / clamp_min(sum(rate(eligibility_http_requests_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 5% of API requests are failing with 5xx
+
+      - alert: EligibilityApiSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(eligibility_http_request_seconds_bucket[10m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: API p95 latency is above 2 seconds

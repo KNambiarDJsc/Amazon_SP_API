@@ -11,3 +11,5 @@ dist/
 frontend/e2e/.state/
 frontend/test-results/
 frontend/playwright-report/
+.env.e2e
+backups/

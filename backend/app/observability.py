@@ -9,6 +9,7 @@ process, is the source of truth; they are cached briefly so a busy scraper canno
 
 import os
 import re
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from prometheus_client import (
     generate_latest,
     multiprocess,
 )
+from prometheus_client import values as prometheus_values
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import func, select
 
@@ -40,6 +42,30 @@ from app.models import EligibilityCheck, Job, JobBrand, SellerCredential
 
 _FAST = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
 _AMAZON = (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20)
+
+
+def _process_id() -> str:
+    """Identify this process in multiprocess metric files by service *and* PID.
+
+    prometheus_client names files by PID alone. In containers every PID namespace is separate, so
+    an API container and a worker container sharing a metrics volume can both have, say, PID 7 and
+    would silently overwrite each other's counters. Qualifying the PID with the service name
+    (METRICS_INSTANCE, e.g. "api" / "worker"; the hostname if unset) keeps them apart.
+
+    The name is deliberately stable across restarts, not a per-container id: a restarted service
+    reopens its own files and its counters continue, and files do not pile up on every deploy.
+    The consequence is one container per METRICS_INSTANCE: two containers with the same value and
+    the same PID would share a file.
+    """
+    instance = (
+        os.environ.get("METRICS_INSTANCE") or os.environ.get("HOSTNAME") or socket.gethostname()
+    )
+    return f"{re.sub(r'[^A-Za-z0-9.-]', '-', instance)}-{os.getpid()}"
+
+
+if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+    # Must happen before any metric below is created.
+    prometheus_values.ValueClass = prometheus_values.MultiProcessValue(_process_id)
 
 HTTP_REQUESTS = Counter(
     "eligibility_http_requests", "HTTP requests handled", ["method", "route", "status"]

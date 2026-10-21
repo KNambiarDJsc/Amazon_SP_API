@@ -1,0 +1,51 @@
+# SITE_ADDRESS is a hostname (automatic HTTPS via Let's Encrypt, ports 80 and 443 must be reachable)
+# or ":80" for plain HTTP behind another TLS terminator or on a private network.
+{
+	admin localhost:2019
+	# No trusted_proxies: Caddy is the edge, so it ignores any X-Forwarded-For a client sends and
+	# passes the real peer address on to the API. If you put a load balancer in front of Caddy, add
+	#   servers { trusted_proxies static <load balancer CIDR> }
+	# here, and nothing wider.
+}
+
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Cross-Origin-Opener-Policy same-origin
+	}
+
+	# Operational endpoints are for the internal network only.
+	@internal path /metrics /metrics/*
+	handle @internal {
+		respond 404
+	}
+
+	@api path /api/* /healthz /readyz
+	handle @api {
+		reverse_proxy api:8000 {
+			# Slow report builds are asynchronous; nothing legitimate needs minutes.
+			transport http {
+				response_header_timeout 120s
+			}
+		}
+	}
+
+	handle {
+		# The dashboard's policy. API responses carry their own (the OAuth callback page is HTML).
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		root * /srv
+		# The HTML shell (served for "/" and every client-side route) must always be revalidated;
+		# hashed build assets never change.
+		header Cache-Control "no-cache"
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}
