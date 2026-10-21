@@ -13,6 +13,7 @@ What happens when something goes wrong is decided here, once:
     request rejected (4xx) while searching      -> dead-letter immediately
     request rejected / malformed body on a check -> that check becomes NEEDS_MANUAL_CHECK
     job paused or cancelled                     -> stop at the next checkpoint
+    job made in the other data mode (mock/live) -> job paused before anything is asked
 """
 
 import logging
@@ -37,6 +38,7 @@ from app.amazon.errors import (
     AmazonTimeout,
     AmazonTransientError,
 )
+from app.amazon.factory import ClientProvider, SharedClientProvider
 from app.amazon.parsing import (
     failure_observation,
     parse_catalog_page,
@@ -60,8 +62,9 @@ from app.enums import (
 from app.models import CatalogCandidate, EligibilityCheck, Job, JobBrand, SellerAccount
 from app.schemas import JobSettings
 from app.services.audit import audit
+from app.services.authorization import mark_needs_reauthorization
 from app.services.evidence import classify_and_store, store_observation
-from app.services.jobs import maybe_complete_job, pause_seller_jobs
+from app.services.jobs import maybe_complete_job, pause_job, pause_seller_jobs
 from app.services.ratelimit import RateLimiter
 from app.services.results import brand_checks, finalize_brand
 from app.services.scheduling import (
@@ -87,15 +90,23 @@ _MAX_ERROR_LENGTH = 500
 @dataclass
 class Runtime:
     """Everything the orchestrator depends on, injectable so tests need no network, Redis or
-    real clock."""
+    real clock. Give it either one `client` for every seller (offline demo, tests) or a
+    `clients` provider that builds each seller's client from their own grant (live)."""
 
-    client: AmazonClient
     limiter: RateLimiter
     settings: Settings
+    client: AmazonClient | None = None
+    clients: ClientProvider | None = None
     session: Callable[[], AbstractContextManager[Session]] = session_scope
     clock: Callable[[], datetime] = utcnow
     sleep: Callable[[float], None] = time.sleep
     rng: random.Random = field(default_factory=random.Random)
+
+    def __post_init__(self) -> None:
+        if self.clients is None:
+            if self.client is None:
+                raise ValueError("Runtime needs a client or a client provider")
+            self.clients = SharedClientProvider(self.client)
 
 
 # ---- control-flow signals ------------------------------------------------------------------
@@ -125,6 +136,10 @@ class _Fatal(Exception):
     pass
 
 
+class _WrongMode(Exception):
+    """The job was created against a different data source than this worker serves."""
+
+
 @dataclass(frozen=True)
 class Plan:
     brand_id: uuid.UUID
@@ -135,6 +150,7 @@ class Plan:
     display_name: str
     settings: JobSettings
     stage: str
+    client: AmazonClient
 
 
 # ---- entry point ---------------------------------------------------------------------------
@@ -161,6 +177,8 @@ def run_brand(brand_id, token: str, worker_id: str, rt: Runtime) -> str:
         return _end(rt, brand_id, worker_id, _defer, deferral, "DEFERRED")
     except _AuthFailed as failure:
         return _end(rt, brand_id, worker_id, _auth_pause, failure, "AUTH_PAUSED")
+    except _WrongMode as failure:
+        return _end(rt, brand_id, worker_id, _wrong_mode_pause, failure, "PAUSED")
     except _Retry as failure:
         return _end(rt, brand_id, worker_id, _retry, failure, "RETRY")
     except _Fatal as failure:
@@ -216,8 +234,16 @@ def _auth_pause(session, brand, signal: _AuthFailed, rt, now) -> None:
         event_type="authorisation_failed",
         detail=str(signal)[:_MAX_ERROR_LENGTH],
     )
+    mark_needs_reauthorization(session, brand.seller_account_id, detail=str(signal), now=now)
     pause_seller_jobs(session, brand.seller_account_id, reason=reason, now=now)
     release_brand(session, brand, refund_attempt=True, reason="authorisation failed")
+
+
+def _wrong_mode_pause(session, brand, signal: _WrongMode, rt, now) -> None:
+    job = session.get(Job, brand.job_id)
+    if job.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+        pause_job(session, job, reason=str(signal), now=now)
+    release_brand(session, brand, refund_attempt=True, reason="data source mismatch")
 
 
 def _retry(session, brand, signal: _Retry, rt, now) -> None:
@@ -268,12 +294,24 @@ def _load_plan(rt: Runtime, brand_id) -> Plan:
         brand = session.get(JobBrand, brand_id)
         job = session.get(Job, brand.job_id)
         seller = session.get(SellerAccount, brand.seller_account_id)
+        if job.data_source != rt.clients.data_source:
+            # A demo job answered by Amazon, or a live job answered by fixtures, would carry
+            # a label that misdescribes every result in it.
+            raise _WrongMode(
+                f"job uses {job.data_source.value} data but the workers run "
+                f"{rt.clients.data_source.value}; resume it once they match"
+            )
         seller_ref = seller.amazon_seller_id
         if not seller_ref:
-            if rt.client.data_source == DataSource.LIVE:
+            if rt.clients.data_source == DataSource.LIVE:
                 raise _AuthFailed("seller account has no Amazon seller ID; complete authorisation")
             seller_ref = MOCK_SELLER_REF
+        try:
+            client = rt.clients.for_seller(session, seller)
+        except AmazonAuthError as exc:
+            raise _AuthFailed(str(exc)) from exc
         return Plan(
+            client=client,
             brand_id=brand.id,
             job_id=job.id,
             seller_id=seller.id,
@@ -347,6 +385,7 @@ def _throttled_by_amazon(exc: AmazonRateLimited, rt: Runtime) -> _Defer:
 
 def _discover(plan: Plan, worker_id: str, rt: Runtime) -> None:
     items: dict[str, CatalogItem] = {}
+    evidence: list[str] = []
     token: str | None = None
     pages = 0
     complete = True
@@ -354,7 +393,7 @@ def _discover(plan: Plan, worker_id: str, rt: Runtime) -> None:
     while True:
         _throttle(plan, rt, "catalog")
         try:
-            body = rt.client.search_catalog_items(
+            body = plan.client.search_catalog_items(
                 keywords=plan.display_name,
                 marketplace_id=plan.marketplace_id,
                 page_token=token,
@@ -372,6 +411,8 @@ def _discover(plan: Plan, worker_id: str, rt: Runtime) -> None:
 
         for item in page.items:
             items.setdefault(item.asin, item)
+        if ref := _evidence_ref(body):
+            evidence.append(ref)
         pages += 1
         token = page.next_token
         if token is None:
@@ -383,6 +424,8 @@ def _discover(plan: Plan, worker_id: str, rt: Runtime) -> None:
 
     with _owned(rt, plan.brand_id, worker_id) as (session, brand):
         _persist_discovery(session, brand, plan, list(items.values()), complete, pages, rt.clock())
+        if evidence:
+            brand.checkpoint = {**brand.checkpoint, "catalog_evidence": evidence}
 
 
 def _persist_discovery(
@@ -492,45 +535,34 @@ def _run_check(plan: Plan, check_id, worker_id: str, rt: Runtime) -> None:
     signal: Exception | None = None
     finalise = True
     try:
-        body = rt.client.get_listings_restrictions(
+        body = plan.client.get_listings_restrictions(
             asin=asin,
             seller_id=plan.seller_ref,
             marketplace_id=plan.marketplace_id,
             condition=condition,
         )
-        observation = parse_restrictions_observation(body, context=context)
+        observation = parse_restrictions_observation(
+            body, context=context, http_status=_status_of(body), evidence_ref=_evidence_ref(body)
+        )
     except AmazonRateLimited as exc:
         raise _throttled_by_amazon(exc, rt) from exc
     except AmazonAuthError as exc:
-        observation = failure_observation(
-            outcome=ObservationOutcome.AUTH_ERROR, context=context, detail=str(exc)
-        )
+        observation = _failure(ObservationOutcome.AUTH_ERROR, context, exc)
         signal, finalise = _AuthFailed(str(exc)), False
     except AmazonTimeout as exc:
-        observation = failure_observation(
-            outcome=ObservationOutcome.TIMEOUT, context=context, detail=str(exc)
-        )
+        observation = _failure(ObservationOutcome.TIMEOUT, context, exc)
         signal, finalise = _Retry(f"{asin}: timed out: {exc}"), False
     except AmazonTransientError as exc:
-        observation = failure_observation(
-            outcome=ObservationOutcome.HTTP_ERROR, context=context, detail=str(exc)
-        )
+        observation = _failure(ObservationOutcome.HTTP_ERROR, context, exc)
         signal, finalise = _Retry(f"{asin}: transient error: {exc}"), False
     except AmazonRequestError as exc:
-        observation = failure_observation(
-            outcome=ObservationOutcome.HTTP_ERROR,
-            context=context,
-            http_status=exc.status,
-            detail=exc.detail,
+        observation = _failure(
+            ObservationOutcome.HTTP_ERROR, context, exc, http_status=exc.status, detail=exc.detail
         )
     except AmazonMalformedResponse as exc:
-        observation = failure_observation(
-            outcome=ObservationOutcome.MALFORMED_RESPONSE, context=context, detail=str(exc)
-        )
+        observation = _failure(ObservationOutcome.MALFORMED_RESPONSE, context, exc)
     except AmazonError as exc:  # any other Amazon failure is unusable evidence, never permission
-        observation = failure_observation(
-            outcome=ObservationOutcome.HTTP_ERROR, context=context, detail=str(exc)
-        )
+        observation = _failure(ObservationOutcome.HTTP_ERROR, context, exc)
 
     with _owned(rt, plan.brand_id, worker_id) as (session, _brand):
         check = session.scalar(
@@ -545,3 +577,23 @@ def _run_check(plan: Plan, check_id, worker_id: str, rt: Runtime) -> None:
             classify_and_store(session, check, rt.clock())
     if signal is not None:
         raise signal
+
+
+def _evidence_ref(source) -> str | None:
+    """Amazon's request ID: the reference Amazon support needs to look up the exact call."""
+    request_id = getattr(source, "request_id", None)
+    return f"x-amzn-RequestId:{request_id}" if request_id else None
+
+
+def _status_of(body) -> int:
+    return getattr(body, "http_status", 200)
+
+
+def _failure(outcome, context, exc: AmazonError, *, http_status=None, detail=None):
+    return failure_observation(
+        outcome=outcome,
+        context=context,
+        http_status=http_status,
+        detail=detail if detail is not None else str(exc),
+        evidence_ref=_evidence_ref(exc),
+    )

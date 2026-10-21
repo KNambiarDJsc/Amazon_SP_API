@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app import __version__
+from app.api.authorization import router as authorization_router
 from app.api.routes import router
 from app.config import get_settings
 from app.db import get_engine
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
         title="Amazon India Seller Eligibility Checker", version=__version__, lifespan=lifespan
     )
     app.include_router(router, prefix="/api/v1")
+    app.include_router(authorization_router, prefix="/api/v1")
 
     @app.get("/health", tags=["ops"])
     def health() -> dict[str, str]:

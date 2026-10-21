@@ -30,6 +30,8 @@ from app.db import UTCDateTime
 from app.domain.observations import utcnow
 from app.enums import (
     MARKETPLACE_ID_IN,
+    AuthorizationMethod,
+    AuthorizationStatus,
     BrandMatch,
     BrandStatus,
     CheckState,
@@ -85,6 +87,48 @@ class SellerAccount(Base):
     api_key_prefix: Mapped[str] = mapped_column(String(12))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class SellerAuthorization(Base):
+    """A seller's grant to this application: which Amazon account granted it, and the LWA
+    refresh token, encrypted (app.crypto). The token is never returned by the API; it is only
+    decrypted inside a worker, at the moment an access token is needed."""
+
+    __tablename__ = "seller_authorizations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_accounts.id"), unique=True
+    )
+    selling_partner_id: Mapped[str] = mapped_column(String(40))
+    method: Mapped[AuthorizationMethod] = mapped_column(
+        enum_col(AuthorizationMethod, "authorization_method")
+    )
+    status: Mapped[AuthorizationStatus] = mapped_column(
+        enum_col(AuthorizationStatus, "authorization_status")
+    )
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)  # erased on disconnect
+    store_name: Mapped[str | None] = mapped_column(String(200))
+    authorized_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class OAuthState(Base):
+    """One pending consent-page round trip. Only a hash of the state is stored; it is
+    single-use, short-lived, and bound to the seller who started it."""
+
+    __tablename__ = "oauth_states"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_accounts.id"), index=True
+    )
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class Job(Base):

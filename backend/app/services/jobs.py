@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session
 
 from app.enums import (
     BLOCKING_STATUSES,
+    AuthorizationStatus,
     BrandStatus,
     CheckState,
     DataSource,
     EligibilityStatus,
     JobStatus,
 )
-from app.models import EligibilityCheck, Job, JobBrand, SellerAccount
+from app.models import EligibilityCheck, Job, JobBrand, SellerAccount, SellerAuthorization
 from app.schemas import IngestionReport, JobOut, JobProgress, JobSettings
 from app.services.audit import audit
 from app.services.evidence import reset_check
@@ -121,10 +122,23 @@ def resume_job(session: Session, job: Job, *, now: datetime) -> None:
         return
     if job.status != JobStatus.PAUSED:
         raise JobStateError(f"cannot resume a {job.status.value} job")
+    if job.data_source == DataSource.LIVE and not _authorization_active(
+        session, job.seller_account_id
+    ):
+        raise JobStateError("connect the seller's Amazon account again before resuming")
     job.status = JobStatus.RUNNING if job.started_at else JobStatus.QUEUED
     job.pause_reason = None
     job.updated_at = now
     audit(session, seller_account_id=job.seller_account_id, job_id=job.id, event_type="job_resumed")
+
+
+def _authorization_active(session: Session, seller_account_id: uuid.UUID) -> bool:
+    status = session.scalar(
+        select(SellerAuthorization.status).where(
+            SellerAuthorization.seller_account_id == seller_account_id
+        )
+    )
+    return status == AuthorizationStatus.ACTIVE
 
 
 def cancel_job(session: Session, job: Job, *, now: datetime) -> None:

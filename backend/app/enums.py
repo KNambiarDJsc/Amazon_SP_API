@@ -77,3 +77,17 @@ class BrandMatch(StrEnum):
 class DataSource(StrEnum):
     LIVE = "LIVE"
     MOCK = "MOCK"
+
+
+class AuthorizationMethod(StrEnum):
+    OAUTH = "OAUTH"  # Seller Central consent page (website authorisation workflow)
+    SELF_AUTHORIZED = "SELF_AUTHORIZED"  # private app: refresh token generated in Seller Central
+
+
+class AuthorizationStatus(StrEnum):
+    # Token stored but the connection check could not run (Amazon unreachable); re-verify.
+    PENDING_VERIFICATION = "PENDING_VERIFICATION"
+    ACTIVE = "ACTIVE"
+    # Amazon rejected the grant during a job (revoked, expired, role missing); grant again.
+    NEEDS_REAUTHORIZATION = "NEEDS_REAUTHORIZATION"
+    REVOKED = "REVOKED"  # disconnected here; the stored token has been erased

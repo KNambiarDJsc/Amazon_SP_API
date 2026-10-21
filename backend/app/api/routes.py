@@ -10,7 +10,7 @@ from app.api.deps import current_seller, require_job
 from app.config import get_settings
 from app.db import session_scope
 from app.domain.observations import utcnow
-from app.enums import BrandStatus, CheckState, EligibilityStatus
+from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus
 from app.models import SellerAccount
 from app.schemas import (
     AuditEventOut,
@@ -23,6 +23,7 @@ from app.schemas import (
     Page,
 )
 from app.services import queries
+from app.services.authorization import is_active
 from app.services.ingestion import (
     IngestionError,
     ingest_brands,
@@ -58,14 +59,21 @@ def _live_guard() -> None:
 
 def _create(seller: SellerAccount, rows, settings: JobSettings, name, filename) -> JobOut:
     _live_guard()
+    data_source = data_source_for(get_settings())
     try:
         with session_scope() as session:
+            if data_source == DataSource.LIVE and not is_active(session, seller.id):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "this seller account is not connected to Amazon; connect it first "
+                    "(POST /api/v1/seller/authorization/start)",
+                )
             job = create_job(
                 session,
                 seller=seller,
                 rows=rows,
                 settings=settings,
-                data_source=data_source_for(get_settings()),
+                data_source=data_source,
                 name=name,
                 source_filename=filename,
                 now=utcnow(),

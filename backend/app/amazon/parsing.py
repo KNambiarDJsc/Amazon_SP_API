@@ -143,6 +143,7 @@ def failure_observation(
     http_status: int | None = None,
     detail: str | None = None,
     source: ObservationSource = ObservationSource.SP_API_RESTRICTIONS,
+    evidence_ref: str | None = None,
 ) -> Observation:
     return Observation(
         source=source,
@@ -150,4 +151,5 @@ def failure_observation(
         context=context,
         http_status=http_status,
         error_detail=detail,
+        evidence_ref=evidence_ref,
     )

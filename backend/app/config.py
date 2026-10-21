@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.enums import MARKETPLACE_ID_IN
@@ -16,8 +16,29 @@ class Settings(BaseSettings):
     amazon_mode: str = Field(default="mock", pattern="^(mock|live)$")
     marketplace_id: str = MARKETPLACE_ID_IN
 
-    # SP-API usage plans differ per operation and seller; these are conservative defaults.
-    # Verify against the current usage plan of the account before raising them.
+    # ---- live SP-API ----
+    # Amazon India is served by the Europe endpoint. Point this at a sandbox endpoint to test.
+    spapi_endpoint: str = "https://sellingpartnerapi-eu.amazon.com"
+    lwa_token_url: str = "https://api.amazon.com/auth/o2/token"
+    lwa_client_id: str | None = None
+    lwa_client_secret: SecretStr | None = None
+    # Restriction messages are classified by their wording ("...approval to list in this
+    # brand"), so reasons and catalog summaries are always requested in English.
+    spapi_locale: str = "en_IN"
+    spapi_timeout_seconds: float = 20.0
+    # Fernet keys, comma-separated. The first encrypts; every one decrypts (key rotation).
+    credentials_encryption_keys: SecretStr | None = None
+
+    # Website authorisation workflow (Seller Central consent page). Optional for a private app,
+    # whose refresh token can instead be registered with `python -m app.cli connect-seller`.
+    spapi_application_id: str | None = None
+    spapi_redirect_uri: str | None = None  # must exactly match a URI registered on the app
+    spapi_app_is_draft: bool = False  # draft apps need version=beta on the consent URL
+    seller_central_url: str = "https://sellercentral.amazon.in"
+    oauth_state_ttl_seconds: int = 600  # Amazon expects the whole flow to finish in 10 minutes
+
+    # Documented usage plans: searchCatalogItems 2 rps (burst 2), getListingsRestrictions 5 rps
+    # (burst 10), per seller and application. Amazon can change them; keep these at or below.
     rate_search_catalog_per_sec: float = 2.0
     rate_search_catalog_burst: int = 2
     rate_restrictions_per_sec: float = 5.0

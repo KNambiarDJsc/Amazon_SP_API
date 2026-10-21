@@ -45,14 +45,17 @@ def test_create_seller_prints_a_working_key_exactly_once(engine, capsys):
         assert account.api_key_prefix == key[:12]
 
 
-def test_drain_refuses_live_mode_instead_of_faking_results(engine, monkeypatch, capsys):
+def test_drain_refuses_unconfigured_live_mode_instead_of_faking_results(
+    engine, monkeypatch, capsys
+):
     monkeypatch.setenv("AMAZON_MODE", "live")
+    monkeypatch.delenv("LWA_CLIENT_ID", raising=False)
     get_settings.cache_clear()
     try:
         assert cli.main(["drain"]) == 2
     finally:
         get_settings.cache_clear()
-    assert "Phase 3" in capsys.readouterr().err
+    assert "LWA_CLIENT_ID is not set" in capsys.readouterr().err
 
 
 def test_drain_runs_open_jobs(engine, seller, clock, capsys, monkeypatch):
@@ -70,3 +73,84 @@ def test_drain_runs_open_jobs(engine, seller, clock, capsys, monkeypatch):
 def test_a_command_is_required():
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+# ---- seller authorisation ------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_live(monkeypatch):
+    from fake_amazon import FakeAmazon, live_settings
+
+    from app.amazon.factory import LiveServices
+
+    fake = FakeAmazon()
+    services = LiveServices(live_settings(), http=fake.http())
+    monkeypatch.setattr(cli, "_live_services", lambda: services)
+    return fake, services
+
+
+def _stdin(monkeypatch, text):
+    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+
+
+def test_generate_key_prints_a_usable_key(capsys):
+    from app.crypto import CredentialBox
+
+    assert cli.main(["generate-key"]) == 0
+    key = capsys.readouterr().out.strip()
+    CredentialBox([key])  # does not raise
+
+
+def test_connect_seller_reads_the_token_from_stdin_and_never_prints_it(
+    engine, seller, fake_live, monkeypatch, capsys
+):
+    from fake_amazon import REFRESH_TOKEN, SELLING_PARTNER_ID
+
+    _stdin(monkeypatch, REFRESH_TOKEN + "\n")
+    code = cli.main(["connect-seller", str(seller.id), "--selling-partner-id", SELLING_PARTNER_ID])
+    printed = capsys.readouterr()
+    assert code == 0, printed.err
+    assert "ACTIVE" in printed.out and "SELF_AUTHORIZED" in printed.out
+    assert REFRESH_TOKEN not in printed.out + printed.err
+
+
+def test_connect_seller_refuses_a_token_amazon_rejects(
+    engine, seller, fake_live, monkeypatch, capsys
+):
+    from fake_amazon import SELLING_PARTNER_ID
+
+    fake, _ = fake_live
+    fake.revoke()
+    _stdin(monkeypatch, "Atzr|revoked\n")
+    code = cli.main(["connect-seller", str(seller.id), "--selling-partner-id", SELLING_PARTNER_ID])
+    assert code == 1
+    assert "invalid_grant" in capsys.readouterr().err
+
+
+def test_rotate_credentials_moves_tokens_to_the_new_key(
+    engine, seller, fake_live, monkeypatch, capsys
+):
+    from fake_amazon import ENCRYPTION_KEY, REFRESH_TOKEN, SELLING_PARTNER_ID
+
+    from app.crypto import CredentialBox, generate_key
+    from app.models import SellerAuthorization
+
+    _stdin(monkeypatch, REFRESH_TOKEN + "\n")
+    cli.main(["connect-seller", str(seller.id), "--selling-partner-id", SELLING_PARTNER_ID])
+    new_key = generate_key()
+    monkeypatch.setenv("CREDENTIALS_ENCRYPTION_KEYS", f"{new_key},{ENCRYPTION_KEY}")
+    get_settings.cache_clear()
+    try:
+        assert cli.main(["rotate-credentials"]) == 0
+    finally:
+        get_settings.cache_clear()
+    assert "re-encrypted 1 credential(s)" in capsys.readouterr().out
+    with session_scope() as s:
+        sealed = s.query(SellerAuthorization).one().refresh_token_encrypted
+    assert CredentialBox([new_key]).open(seller.id, sealed) == REFRESH_TOKEN
+
+
+def test_seller_status_for_an_unconnected_seller(engine, seller, capsys):
+    assert cli.main(["seller-status", str(seller.id)]) == 0
+    assert "connected            False" in capsys.readouterr().out

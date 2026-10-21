@@ -2,7 +2,10 @@
 
 
 class AmazonError(Exception):
-    """Base class."""
+    """Base class. `request_id` is Amazon's x-amzn-RequestId, when the failure came from a
+    response, so the evidence can point at the exact call."""
+
+    request_id: str | None = None
 
 
 class AmazonRateLimited(AmazonError):
@@ -13,6 +16,11 @@ class AmazonRateLimited(AmazonError):
 
 class AmazonAuthError(AmazonError):
     """Credentials or authorisation are missing, expired or revoked. Retrying cannot help."""
+
+
+class SellerNotAuthorized(AmazonAuthError):
+    """No usable grant is stored for the seller (never connected, disconnected, or the stored
+    token cannot be decrypted), so no request is sent to Amazon at all."""
 
 
 class AmazonTransientError(AmazonError):

@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.domain.observations import ApprovalLink
 from app.domain.summary import BrandSummary
 from app.enums import (
+    AuthorizationMethod,
+    AuthorizationStatus,
     BrandMatch,
     BrandStatus,
     CheckState,
@@ -200,6 +202,26 @@ class AuditEventOut(ORM):
     check_id: uuid.UUID | None
     payload: dict[str, Any]
     created_at: datetime
+
+
+class AuthorizationOut(BaseModel):
+    """The state of a seller's Amazon grant. Never carries the token itself."""
+
+    connected: bool
+    status: AuthorizationStatus | None = None
+    method: AuthorizationMethod | None = None
+    selling_partner_id: str | None = None
+    store_name: str | None = None
+    authorized_at: datetime | None = None
+    verified_at: datetime | None = None
+    # Amazon refresh tokens last 365 days; the seller must grant access again before this.
+    reauthorize_by: datetime | None = None
+    last_error: str | None = None
+
+
+class AuthorizationStart(BaseModel):
+    authorization_url: str
+    expires_at: datetime
 
 
 T = TypeVar("T")

@@ -135,15 +135,17 @@ def test_too_many_brands_is_rejected_not_truncated(client, key, monkeypatch):
     assert response.status_code == 422 and "exceeds the limit" in response.json()["detail"]
 
 
-def test_live_mode_refuses_jobs_until_the_real_client_exists(client, key, monkeypatch):
+def test_unconfigured_live_mode_refuses_jobs_instead_of_using_fixtures(client, key, monkeypatch):
     monkeypatch.setenv("AMAZON_MODE", "live")
+    for name in ("LWA_CLIENT_ID", "LWA_CLIENT_SECRET", "CREDENTIALS_ENCRYPTION_KEYS"):
+        monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()
     try:
         response = client.post("/api/v1/jobs", json={"brands": ["eSSL"]}, headers=auth(key))
     finally:
         get_settings.cache_clear()
     assert response.status_code == 503
-    assert "Phase 3" in response.json()["detail"]
+    assert "LWA_CLIENT_ID is not set" in response.json()["detail"]
 
 
 def test_preview_reports_what_would_be_accepted_without_creating_a_job(client, key):
