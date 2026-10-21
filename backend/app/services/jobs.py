@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.domain.observations import utcnow
@@ -147,12 +147,24 @@ def cancel_job(session: Session, job: Job) -> None:
     )
 
 
+def lock_job_completion(session: Session, job_id: uuid.UUID) -> None:
+    """Serialise the "is this job finished?" decision per job (PostgreSQL advisory lock, released
+    at commit). Without it two brands finishing at the same instant each see the other as still
+    active (neither has committed) and the job is never completed.
+
+    An advisory lock rather than SELECT ... FOR UPDATE on the job row, on purpose: inserting an
+    audit row already holds a KEY SHARE lock on that row (foreign-key check), so asking for FOR
+    UPDATE afterwards is a lock *upgrade* and concurrent finishers deadlock. Advisory locks are
+    invisible to row and foreign-key locking, so there is no such cycle.
+    """
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"), {"k": (job_id.int ^ 0x10B) % (2**63)}
+        )
+
+
 def maybe_complete_job(session: Session, job_id: uuid.UUID) -> bool:
-    # Serialise completers on the job row. Without this, two brands finishing at the same instant
-    # each see the other as still active (neither has committed) and the job is never completed.
-    # The second to take the lock counts after the first has committed. Lock order is always
-    # brand row, then job row, so this cannot deadlock with the other writers.
-    session.execute(select(Job.id).where(Job.id == job_id).with_for_update())
+    lock_job_completion(session, job_id)
     active = session.scalar(
         select(func.count())
         .select_from(JobBrand)

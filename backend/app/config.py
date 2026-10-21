@@ -9,6 +9,24 @@ from app.enums import MARKETPLACE_ID_IN
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
+    environment: str = "development"  # "production" disables API docs and hardens defaults
+    enable_api_docs: bool = True
+    log_json: bool = False
+    log_level: str = "INFO"
+
+    # --- API protection. Limits are per API key (or per client IP when unauthenticated).
+    api_rate_limit_enabled: bool = True
+    allowed_hosts: str = "*"  # comma-separated Host values accepted (set your domain in production)
+    api_rate_per_sec: float = 20.0
+    api_rate_burst: int = 60
+    api_anon_rate_per_sec: float = 5.0
+    api_anon_rate_burst: int = 20
+    auth_failure_burst: int = 10  # failed authentications per IP before they are throttled
+    auth_failure_refill_seconds: float = 6.0
+    max_json_body_bytes: int = 1_048_576
+    metrics_token: SecretStr = SecretStr("")  # if set, /metrics requires this bearer token
+    otel_exporter_otlp_endpoint: str = ""  # set to enable tracing
+
     database_url: str = "postgresql+psycopg://postgres@localhost:5432/eligibility"
     redis_url: str = "redis://localhost:6379/0"
 
@@ -69,6 +87,12 @@ class Settings(BaseSettings):
     max_throttle_deferrals: int = 30
     backoff_base_seconds: float = 5.0
     backoff_cap_seconds: float = 300.0
+
+    # Large reports are built by a worker instead of inside an HTTP request.
+    export_dir: str = "var/exports"
+    export_sync_max_checks: int = 10_000
+    export_ttl_hours: int = 24
+    export_stale_minutes: int = 30  # a RUNNING export older than this lost its worker
 
     max_upload_bytes: int = 5 * 1024 * 1024
     max_brands_per_job: int = 5000

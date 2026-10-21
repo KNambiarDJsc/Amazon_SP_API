@@ -31,12 +31,18 @@ log = logging.getLogger(__name__)
 class Dispatcher(Protocol):
     def enqueue_brand(self, brand_id: uuid.UUID, delay_seconds: float = 0.0) -> None: ...
 
+    def enqueue_export(self, export_id: uuid.UUID) -> None: ...
+
 
 class InlineDispatcher:
     """Records messages instead of sending them; tests and scripts drain them explicitly."""
 
     def __init__(self) -> None:
         self.messages: list[tuple[uuid.UUID, float]] = []
+        self.export_messages: list[uuid.UUID] = []
+
+    def enqueue_export(self, export_id: uuid.UUID) -> None:
+        self.export_messages.append(export_id)
 
     def enqueue_brand(self, brand_id: uuid.UUID, delay_seconds: float = 0.0) -> None:
         self.messages.append((brand_id, delay_seconds))
@@ -111,6 +117,7 @@ class RecoveryStats:
     requeued_stale: int = 0
     dispatched: int = 0
     jobs_completed: int = 0
+    exports_purged: int = 0
 
 
 def recover(
@@ -181,6 +188,11 @@ def recover(
         for job_id, _ in running:
             if maybe_complete_job(session, job_id):
                 stats.jobs_completed += 1
+
+    from app.services.exports import purge
+
+    if seller_id is None:  # housekeeping is global; skip it for seller-scoped calls
+        stats.exports_purged = purge(settings)["purged"]
 
     for seller in {s for _, s in running}:
         stats.dispatched += len(

@@ -21,6 +21,7 @@ from app.enums import (
     CheckState,
     DataSource,
     EligibilityStatus,
+    ExportStatus,
     JobStatus,
     ObservationOutcome,
     ObservationSource,
@@ -263,3 +264,15 @@ class ReviewItem(BaseModel):
 
 class RetryBrandIn(BaseModel):
     rediscover: bool = Field(default=False, description="Search the catalog again from the start")
+
+
+class ExportOut(ORM):
+    id: uuid.UUID
+    status: ExportStatus
+    requested_at: datetime
+    finished_at: datetime | None
+    expires_at: datetime | None
+    size_bytes: int | None
+    checks_count: int | None
+    error: str | None
+    download_url: str | None = None  # present once the file is ready

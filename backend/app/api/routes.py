@@ -3,21 +3,31 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_seller, db_dep, dispatcher_dep, settings_dep
 from app.config import Settings
-from app.domain.observations import BrowserSignals
-from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus, ObservationSource
-from app.models import SellerAccount, SellerCredential
+from app.db import session_scope
+from app.domain.observations import BrowserSignals, utcnow
+from app.enums import (
+    BrandStatus,
+    CheckState,
+    DataSource,
+    EligibilityStatus,
+    ExportStatus,
+    ObservationSource,
+)
+from app.models import Export, SellerAccount, SellerCredential
 from app.schemas import (
     BrandOut,
     CandidateOut,
     CheckDetailOut,
     CheckOut,
     ErrorOut,
+    ExportOut,
     JobCreateRequest,
     JobOut,
     JobSettings,
@@ -26,7 +36,7 @@ from app.schemas import (
     RetryBrandIn,
     ReviewItem,
 )
-from app.services import orchestration, review, views
+from app.services import exports, orchestration, review, views
 from app.services.dispatch import Dispatcher
 from app.services.ingestion import (
     IngestionError,
@@ -350,15 +360,101 @@ def read_events(job_id: uuid.UUID, seller: Seller, db: Db, limit: Limit = 100):
     return views.list_events(db, job_id, limit)
 
 
-@router.get("/jobs/{job_id}/export.xlsx", responses={**NOT_FOUND, 200: {"content": {XLSX: {}}}})
-def export_job(job_id: uuid.UUID, seller: Seller, db: Db):
-    job = _owned_job(db, seller, job_id)
+def _snapshot_workbook(cfg: Settings, job_id: uuid.UUID) -> bytes:
+    """Build the workbook from one consistent snapshot of committed rows."""
+    from app.models import Job
+
+    with session_scope() as session:
+        if session.get_bind().dialect.name == "postgresql":
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        return build_workbook(session, session.get(Job, job_id))
+
+
+@router.get(
+    "/jobs/{job_id}/export.xlsx",
+    responses={**NOT_FOUND, 409: {"model": ErrorOut}, 200: {"content": {XLSX: {}}}},
+)
+def export_job(job_id: uuid.UUID, seller: Seller, db: Db, cfg: Cfg):
+    """Download the report directly. Very large jobs must use POST /jobs/{id}/exports instead,
+    because building the file would otherwise hold a request open for tens of seconds."""
+    _owned_job(db, seller, job_id)
+    size = exports.count_checks(db, job_id)
+    if size > cfg.export_sync_max_checks:
+        raise HTTPException(
+            409,
+            f"This job has {size} checks, too many to export in one request "
+            f"(limit {cfg.export_sync_max_checks}). Use POST /api/v1/jobs/{job_id}/exports and "
+            "download the file when it is ready.",
+        )
     return Response(
-        build_workbook(db, job),
+        _snapshot_workbook(cfg, job_id),
         media_type=XLSX,
         headers={
             "Content-Disposition": f'attachment; filename="eligibility-{str(job_id)[:8]}.xlsx"'
         },
+    )
+
+
+def _export_out(job_id: uuid.UUID, export: Export) -> ExportOut:
+    out = ExportOut.model_validate(export)
+    if export.status == ExportStatus.READY:
+        out.download_url = f"/api/v1/jobs/{job_id}/exports/{export.id}/download"
+    return out
+
+
+@router.post(
+    "/jobs/{job_id}/exports", response_model=ExportOut, status_code=202, responses=NOT_FOUND
+)
+def create_export(job_id: uuid.UUID, seller: Seller, db: Db, dispatcher: Dispatch):
+    """Queue a report build; poll the returned export until it is READY, then download it."""
+    _owned_job(db, seller, job_id)
+    export_id, _ = orchestration.request_export(dispatcher, seller.id, job_id)
+    db.expire_all()
+    return _export_out(job_id, db.get(Export, export_id))
+
+
+@router.get("/jobs/{job_id}/exports", response_model=list[ExportOut], responses=NOT_FOUND)
+def list_exports(job_id: uuid.UUID, seller: Seller, db: Db):
+    _owned_job(db, seller, job_id)
+    rows = db.scalars(
+        select(Export).where(Export.job_id == job_id).order_by(Export.requested_at.desc()).limit(20)
+    ).all()
+    return [_export_out(job_id, e) for e in rows]
+
+
+def _owned_export(db: Session, seller: SellerAccount, job_id: uuid.UUID, export_id: uuid.UUID):
+    _owned_job(db, seller, job_id)
+    export = db.scalar(
+        select(Export).where(
+            Export.id == export_id, Export.job_id == job_id, Export.seller_account_id == seller.id
+        )
+    )
+    if export is None:
+        raise HTTPException(404, "Export not found.")
+    return export
+
+
+@router.get("/jobs/{job_id}/exports/{export_id}", response_model=ExportOut, responses=NOT_FOUND)
+def read_export(job_id: uuid.UUID, export_id: uuid.UUID, seller: Seller, db: Db):
+    return _export_out(job_id, _owned_export(db, seller, job_id, export_id))
+
+
+@router.get(
+    "/jobs/{job_id}/exports/{export_id}/download",
+    responses={**NOT_FOUND, 409: {"model": ErrorOut}, 410: {"model": ErrorOut}},
+)
+def download_export(job_id: uuid.UUID, export_id: uuid.UUID, seller: Seller, db: Db, cfg: Cfg):
+    export = _owned_export(db, seller, job_id, export_id)
+    if export.status != ExportStatus.READY:
+        raise HTTPException(409, f"The export is {export.status.value}, not ready to download.")
+    path = exports.export_path(cfg, export)
+    if (export.expires_at and export.expires_at < utcnow()) or not path.is_file():
+        raise HTTPException(410, "This export has expired; request a new one.")
+    return FileResponse(
+        path,
+        media_type=XLSX,
+        filename=f"eligibility-{str(job_id)[:8]}.xlsx",
+        headers={"Cache-Control": "no-store"},
     )
 
 

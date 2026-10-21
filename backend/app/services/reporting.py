@@ -57,7 +57,7 @@ PRODUCT_COLUMNS = [
 ]
 AUDIT_EXTRA = [("Record type", 16), ("Observation outcome", 20), ("HTTP status", 12)]
 
-_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+_FORMULA_FIRST = frozenset("=+-@\t\r")
 RESTRICTED = (
     EligibilityStatus.BRAND_APPROVAL_REQUIRED,
     EligibilityStatus.OTHER_APPROVAL_REQUIRED,
@@ -73,12 +73,12 @@ def _excel_datetime(value: datetime | None) -> datetime | None:
 
 
 def _cell(ws, value: Any):
-    """A value safe to append in write-only mode."""
+    """A value safe to append in write-only mode. Plain values are appended as they are (this is
+    the hot path: millions of cells); only text a spreadsheet could read as a formula is wrapped
+    so it is stored as text."""
     if isinstance(value, datetime):
-        cell = WriteOnlyCell(ws, value=_excel_datetime(value))
-        cell.number_format = "yyyy-mm-dd hh:mm:ss"
-        return cell
-    if isinstance(value, str) and value.startswith(_FORMULA_STARTS):
+        return _excel_datetime(value)  # openpyxl gives datetimes a date format on its own
+    if isinstance(value, str) and value[:1] in _FORMULA_FIRST:
         cell = WriteOnlyCell(ws, value=value)
         cell.data_type = "s"  # force text; never a formula
         return cell
@@ -123,85 +123,103 @@ def _link(check: EligibilityCheck) -> str:
 
 
 class _Context:
+    """Everything the sheets need, loaded with a handful of column-only queries (no ORM objects,
+    and never the large raw evidence payloads)."""
+
     def __init__(self, session: Session, job: Job):
         self.job = job
         seller = session.get(SellerAccount, job.seller_account_id)
         self.seller_ref = seller.amazon_seller_id or str(seller.id)
         self.data_source = (
             "MOCK (demo data, not live Amazon results)"
-            if (job.data_source == DataSource.MOCK)
+            if job.data_source == DataSource.MOCK
             else "LIVE"
         )
         self.brands = {
             b.id: b
-            for b in session.scalars(select(JobBrand).where(JobBrand.job_id == job.id)).all()
+            for b in session.execute(
+                select(
+                    JobBrand.id,
+                    JobBrand.position,
+                    JobBrand.display_name,
+                    JobBrand.status,
+                    JobBrand.brand_status,
+                    JobBrand.brand_summary,
+                    JobBrand.last_error,
+                    JobBrand.finished_at,
+                ).where(JobBrand.job_id == job.id)
+            )
         }
-        self.titles = {
-            c.id: c.title
-            for c in session.scalars(
-                select(CatalogCandidate)
-                .join(JobBrand, JobBrand.id == CatalogCandidate.job_brand_id)
-                .where(JobBrand.job_id == job.id)
-            ).all()
-        }
-        self.rank = {
-            c.id: (c.rank if c.rank is not None else 10**6)
-            for c in session.scalars(
-                select(CatalogCandidate)
-                .join(JobBrand, JobBrand.id == CatalogCandidate.job_brand_id)
-                .where(JobBrand.job_id == job.id)
-            ).all()
-        }
-        self.checks = sorted(
-            session.scalars(
-                select(EligibilityCheck).where(EligibilityCheck.job_id == job.id)
-            ).all(),
-            key=lambda c: (
-                self.brands[c.job_brand_id].position,
-                self.rank[c.candidate_id],
-                c.condition,
-            ),
-        )
-        self.observations: dict[Any, list[CheckObservation]] = {}
-        for obs in session.scalars(
-            select(CheckObservation)
+        self.checks = session.execute(
+            select(
+                EligibilityCheck.id,
+                EligibilityCheck.asin,
+                EligibilityCheck.condition,
+                EligibilityCheck.marketplace_id,
+                EligibilityCheck.state,
+                EligibilityCheck.status,
+                EligibilityCheck.rule_id,
+                EligibilityCheck.rationale,
+                EligibilityCheck.reason_codes,
+                EligibilityCheck.messages,
+                EligibilityCheck.approval_links,
+                EligibilityCheck.verification_methods,
+                EligibilityCheck.checked_at,
+                EligibilityCheck.job_brand_id,
+                CatalogCandidate.title,
+            )
+            .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
+            .where(EligibilityCheck.job_id == job.id)
+            .order_by(EligibilityCheck.seq)
+        ).all()
+        self.observations: dict[Any, list[Any]] = {}
+        for obs in session.execute(
+            select(
+                CheckObservation.check_id,
+                CheckObservation.evidence_ref,
+                CheckObservation.observed_at,
+                CheckObservation.outcome,
+                CheckObservation.http_status,
+            )
             .join(EligibilityCheck, EligibilityCheck.id == CheckObservation.check_id)
             .where(EligibilityCheck.job_id == job.id)
             .order_by(CheckObservation.observed_at, CheckObservation.id)
         ):
             self.observations.setdefault(obs.check_id, []).append(obs)
+        self._marketplace = self.checks[0].marketplace_id if self.checks else ""
 
-    def brand_result(self, brand: JobBrand) -> str:
+    def brand_result(self, brand) -> str:
         return brand.brand_status.value if brand.brand_status else ""
 
-    def product_row(self, check: EligibilityCheck) -> list[Any]:
+    def product_row(self, check) -> list[Any]:
         brand = self.brands[check.job_brand_id]
-        observations = self.observations.get(check.id, [])
+        observations = self.observations.get(check.id)
+        messages = check.messages
         return [
             brand.display_name,
             check.asin,
-            self.titles.get(check.candidate_id) or "",
+            check.title or "",
             check.marketplace_id,
             check.condition,
             check.status.value if check.status else "PENDING",
-            _reason_text(check),
-            _link(check),
+            "; ".join(messages) if messages else ", ".join(check.reason_codes),
+            next((link["resource"] for link in check.approval_links if link.get("resource")), ""),
             ", ".join(check.verification_methods),
             self.seller_ref,
             observations[-1].evidence_ref if observations else "",
             check.checked_at,
-            self.brand_result(brand),
+            brand.brand_status.value if brand.brand_status else "",
             check.rule_id or "",
             check.rationale or "",
             self.data_source,
         ]
 
-    def brand_row(self, brand: JobBrand, status: str, rationale: str, rule: str = "") -> list[Any]:
+    def brand_row(self, brand, status: str, rationale: str, rule: str = "") -> list[Any]:
         return [
             brand.display_name,
             "",
             "",
-            self.job_marketplace(),
+            self._marketplace,
             "",
             status,
             "",
@@ -215,9 +233,6 @@ class _Context:
             rationale,
             self.data_source,
         ]
-
-    def job_marketplace(self) -> str:
-        return next((c.marketplace_id for c in self.checks), "") or ""
 
 
 def build_workbook(session: Session, job: Job) -> bytes:

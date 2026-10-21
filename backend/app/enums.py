@@ -78,3 +78,10 @@ class BrandMatch(StrEnum):
 class DataSource(StrEnum):
     LIVE = "LIVE"
     MOCK = "MOCK"
+
+
+class ExportStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    READY = "READY"
+    FAILED = "FAILED"

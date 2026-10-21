@@ -189,3 +189,42 @@ def test_two_brands_finishing_at_the_same_instant_still_complete_the_job(seller)
     run_threads(2, finish)
     with session_scope() as s:
         assert s.get(Job, job_id).status == JobStatus.COMPLETED
+
+
+def test_many_brands_finishing_together_never_deadlock_and_the_job_completes(seller):
+    """Inserting an audit row takes a KEY SHARE lock on the job row (foreign key check). Asking for
+    FOR UPDATE on that row afterwards is a lock upgrade: two finishers each hold the share lock and
+    wait for the other. So the job lock must be one that rows and foreign keys can't touch."""
+    from app.enums import JobStatus
+    from app.models import Job
+    from app.services import audit
+    from app.services.jobs import maybe_complete_job
+
+    # Within the connection pool (5 + 10 overflow): every thread holds a connection at the barrier.
+    names = [f"Brand{i}" for i in range(12)]
+    dispatcher = InlineDispatcher()
+    cfg, job_id = submit(seller, names, dispatcher, window=12)
+    with session_scope() as s:
+        brands = s.scalars(select(JobBrand).where(JobBrand.job_id == job_id)).all()
+        ids = [b.id for b in brands]
+        for b in brands:
+            b.status = BrandStatus.IN_PROGRESS
+    barrier = threading.Barrier(len(ids))
+
+    def finish(i):
+        with session_scope() as s:
+            brand = s.get(JobBrand, ids[i], with_for_update=True)  # like the processor's fence
+            brand.status = BrandStatus.COMPLETED
+            audit.record(
+                s,
+                seller_account_id=seller.id,
+                job_id=job_id,
+                job_brand_id=ids[i],
+                event_type="BRAND_COMPLETED",
+            )  # the FK check that takes the share lock
+            barrier.wait()  # everyone holds it at once
+            maybe_complete_job(s, job_id)
+
+    run_threads(len(ids), finish)  # any DeadlockDetected surfaces here and fails the test
+    with session_scope() as s:
+        assert s.get(Job, job_id).status == JobStatus.COMPLETED

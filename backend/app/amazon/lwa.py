@@ -14,6 +14,7 @@ from app.amazon.errors import (
     AmazonTransientError,
 )
 from app.domain.observations import utcnow
+from app.observability import LWA_REFRESHES
 
 log = logging.getLogger(__name__)
 
@@ -113,10 +114,12 @@ class LwaTokenProvider:
                     },
                 )
             except AmazonAuthError as exc:
+                LWA_REFRESHES.labels("rejected").inc()
                 self._token = self._expires = None
                 if isinstance(exc, AmazonCredentialsRevoked) and self._on_revoked is not None:
                     self._on_revoked(str(exc))
                 raise
+            LWA_REFRESHES.labels("ok").inc()
             token = body.get("access_token")
             if not isinstance(token, str) or not token:
                 raise AmazonMalformedResponse("LWA response had no access_token")

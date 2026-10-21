@@ -115,30 +115,50 @@ def list_checks(
     limit: int,
     offset: int,
 ) -> Page[CheckOut]:
-    query = (
-        select(EligibilityCheck, JobBrand, CatalogCandidate.title)
-        .join(JobBrand, JobBrand.id == EligibilityCheck.job_brand_id)
-        .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
-        .where(EligibilityCheck.job_id == job_id)
-    )
+    """Two steps, so cost does not grow with the size of the job: choose the page of ids from the
+    checks table alone (an index scan in display order), then load details for just those rows.
+    Joins are only used inside the text search, as subqueries."""
+    where = [EligibilityCheck.job_id == job_id]
     if status:
-        query = query.where(EligibilityCheck.status == status)
+        where.append(EligibilityCheck.status == status)
     if state:
-        query = query.where(EligibilityCheck.state == state)
+        where.append(EligibilityCheck.state == state)
     if brand_id:
-        query = query.where(EligibilityCheck.job_brand_id == brand_id)
+        where.append(EligibilityCheck.job_brand_id == brand_id)
     if q:
-        query = query.where(
-            EligibilityCheck.asin.icontains(q, autoescape=True)
-            | CatalogCandidate.title.icontains(q, autoescape=True)
-            | JobBrand.display_name.icontains(q, autoescape=True)
+        by_brand = select(JobBrand.id).where(
+            JobBrand.job_id == job_id, JobBrand.display_name.icontains(q, autoescape=True)
         )
-    total = session.scalar(select(func.count()).select_from(query.subquery()))
-    rows = session.execute(
-        query.order_by(JobBrand.position, CatalogCandidate.rank, EligibilityCheck.condition)
+        by_title = (
+            select(CatalogCandidate.id)
+            .join(JobBrand, JobBrand.id == CatalogCandidate.job_brand_id)
+            .where(JobBrand.job_id == job_id, CatalogCandidate.title.icontains(q, autoescape=True))
+        )
+        where.append(
+            EligibilityCheck.asin.icontains(q, autoescape=True)
+            | EligibilityCheck.job_brand_id.in_(by_brand)
+            | EligibilityCheck.candidate_id.in_(by_title)
+        )
+
+    total = session.scalar(select(func.count()).select_from(EligibilityCheck).where(*where))
+    ids = session.scalars(
+        select(EligibilityCheck.id)
+        .where(*where)
+        .order_by(EligibilityCheck.seq)
         .limit(limit)
         .offset(offset)
     ).all()
+    rows = (
+        session.execute(
+            select(EligibilityCheck, JobBrand, CatalogCandidate.title)
+            .join(JobBrand, JobBrand.id == EligibilityCheck.job_brand_id)
+            .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
+            .where(EligibilityCheck.id.in_(ids))
+            .order_by(EligibilityCheck.seq)
+        ).all()
+        if ids
+        else []
+    )
     return Page(
         items=[_check_out(c, b, t) for c, b, t in rows], total=total, limit=limit, offset=offset
     )
@@ -204,75 +224,87 @@ def list_events(session: Session, job_id: uuid.UUID, limit: int) -> list[dict]:
 def review_queue(
     session: Session, job_id: uuid.UUID, seller_central_url: str, limit: int, offset: int
 ) -> Page[ReviewItem]:
-    """Everything a person still has to look at: ASIN checks the machine could not settle, and
-    brands that found nothing, failed, or were too thinly sampled."""
+    """Everything a person still has to look at: ASIN checks the machine could not settle, then
+    brands that found nothing, failed, or were too thinly sampled. Paginated in SQL."""
+    check_where = (
+        EligibilityCheck.job_id == job_id,
+        EligibilityCheck.state == CheckState.DONE,
+        EligibilityCheck.status == EligibilityStatus.NEEDS_MANUAL_CHECK,
+    )
+    brand_where = (
+        JobBrand.job_id == job_id,
+        JobBrand.brand_status.in_(
+            [EligibilityStatus.NO_PRODUCT_FOUND, EligibilityStatus.NEEDS_MANUAL_CHECK]
+        ),
+    )
+    n_checks = session.scalar(
+        select(func.count()).select_from(EligibilityCheck).where(*check_where)
+    )
+    n_brands = session.scalar(select(func.count()).select_from(JobBrand).where(*brand_where))
+
     items: list[ReviewItem] = []
-
-    check_rows = session.execute(
-        select(EligibilityCheck, JobBrand, CatalogCandidate.title)
-        .join(JobBrand, JobBrand.id == EligibilityCheck.job_brand_id)
-        .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
-        .where(
-            EligibilityCheck.job_id == job_id,
-            EligibilityCheck.state == CheckState.DONE,
-            EligibilityCheck.status == EligibilityStatus.NEEDS_MANUAL_CHECK,
-        )
-        .order_by(JobBrand.position, CatalogCandidate.rank, EligibilityCheck.condition)
-    ).all()
-    for check, brand, title in check_rows:
-        label = label_for(check.condition)
-        items.append(
-            ReviewItem(
-                kind="CHECK",
-                brand_id=brand.id,
-                brand=brand.display_name,
-                check_id=check.id,
-                asin=check.asin,
-                title=title,
-                condition=check.condition,
-                status=check.status,
-                rule_id=check.rule_id,
-                rationale=check.rationale,
-                actions=["record_evidence", "recheck"],
-                how_to=[
-                    f"In Seller Central, open the product panel for ASIN {check.asin}.",
-                    f"Choose the condition '{label}' in the dropdown. Do not click Sell, "
-                    "Apply to sell or Copy listing.",
-                    "Record exactly what is on screen: the ASIN shown, the condition selected, "
-                    "the primary button's label and whether it is enabled, and the text of "
-                    "every notice.",
-                ],
-                seller_central_url=seller_central_url,
+    if offset < n_checks:
+        rows = session.execute(
+            select(EligibilityCheck, JobBrand, CatalogCandidate.title)
+            .join(JobBrand, JobBrand.id == EligibilityCheck.job_brand_id)
+            .join(CatalogCandidate, CatalogCandidate.id == EligibilityCheck.candidate_id)
+            .where(*check_where)
+            .order_by(EligibilityCheck.seq)
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        for check, brand, title in rows:
+            label = label_for(check.condition)
+            items.append(
+                ReviewItem(
+                    kind="CHECK",
+                    brand_id=brand.id,
+                    brand=brand.display_name,
+                    check_id=check.id,
+                    asin=check.asin,
+                    title=title,
+                    condition=check.condition,
+                    status=check.status,
+                    rule_id=check.rule_id,
+                    rationale=check.rationale,
+                    actions=["record_evidence", "recheck"],
+                    how_to=[
+                        f"In Seller Central, open the product panel for ASIN {check.asin}.",
+                        f"Choose the condition '{label}' in the dropdown. Do not click Sell, "
+                        "Apply to sell or Copy listing.",
+                        "Record exactly what is on screen: the ASIN shown, the condition selected, "
+                        "the primary button's label and whether it is enabled, and the text of "
+                        "every notice.",
+                    ],
+                    seller_central_url=seller_central_url,
+                )
             )
-        )
 
-    brand_rows = session.scalars(
-        select(JobBrand)
-        .where(
-            JobBrand.job_id == job_id,
-            JobBrand.brand_status.in_(
-                [EligibilityStatus.NO_PRODUCT_FOUND, EligibilityStatus.NEEDS_MANUAL_CHECK]
-            ),
-        )
-        .order_by(JobBrand.position)
-    ).all()
-    for brand in brand_rows:
-        summary = brand.brand_summary or {}
-        items.append(
-            ReviewItem(
-                kind="BRAND",
-                brand_id=brand.id,
-                brand=brand.display_name,
-                status=brand.brand_status,
-                rule_id=summary.get("rule_id"),
-                rationale=(summary.get("rationale") or "")
-                + (f" Last error: {brand.last_error}" if brand.last_error else ""),
-                actions=["retry_brand"],
-                how_to=[
-                    "Check the brand's spelling as Amazon writes it, then retry.",
-                    "Use 'rediscover' to search the catalog again from the start.",
-                ],
+    room = limit - len(items)
+    if room > 0:
+        brands = session.scalars(
+            select(JobBrand)
+            .where(*brand_where)
+            .order_by(JobBrand.position)
+            .limit(room)
+            .offset(max(0, offset - n_checks))
+        ).all()
+        for brand in brands:
+            summary = brand.brand_summary or {}
+            items.append(
+                ReviewItem(
+                    kind="BRAND",
+                    brand_id=brand.id,
+                    brand=brand.display_name,
+                    status=brand.brand_status,
+                    rule_id=summary.get("rule_id"),
+                    rationale=(summary.get("rationale") or "")
+                    + (f" Last error: {brand.last_error}" if brand.last_error else ""),
+                    actions=["retry_brand"],
+                    how_to=[
+                        "Check the brand's spelling as Amazon writes it, then retry.",
+                        "Use 'rediscover' to search the catalog again from the start.",
+                    ],
+                )
             )
-        )
-
-    return Page(items=items[offset : offset + limit], total=len(items), limit=limit, offset=offset)
+    return Page(items=items, total=n_checks + n_brands, limit=limit, offset=offset)

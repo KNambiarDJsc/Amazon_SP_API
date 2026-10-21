@@ -36,6 +36,7 @@ from app.enums import (
     CheckState,
     DataSource,
     EligibilityStatus,
+    ExportStatus,
     JobStatus,
     ObservationOutcome,
     ObservationSource,
@@ -211,7 +212,8 @@ class EligibilityCheck(Base):
         ),
         UniqueConstraint("id", "seller_account_id", name="uq_checks_id_seller"),
         UniqueConstraint("job_id", "check_key", name="uq_checks_job_key"),
-        Index("ix_checks_job_status", "job_id", "status"),
+        Index("ix_checks_job_seq", "job_id", "seq"),
+        Index("ix_checks_job_status_seq", "job_id", "status", "seq"),
         Index("ix_checks_job_brand", "job_brand_id"),
         CheckConstraint("(state = 'DONE') = (status IS NOT NULL)", name="done_iff_status"),
     )
@@ -226,6 +228,7 @@ class EligibilityCheck(Base):
     condition: Mapped[str] = mapped_column(String(40))
     verification_context: Mapped[str] = mapped_column(String(100))
     check_key: Mapped[str] = mapped_column(String(64))
+    seq: Mapped[int] = mapped_column(Integer, default=0)  # display order within the job
     state: Mapped[CheckState] = mapped_column(
         enum_col(CheckState, "check_state"), default=CheckState.PENDING
     )
@@ -344,3 +347,32 @@ class BrowserSession(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Export(Base):
+    """A generated Excel report. The file lives under EXPORT_DIR and is removed after its TTL."""
+
+    __tablename__ = "exports"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id", "seller_account_id"],
+            ["jobs.id", "jobs.seller_account_id"],
+            name="fk_exports_job_seller",
+        ),
+        Index("ix_exports_job_requested", "job_id", "requested_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    seller_account_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    job_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    status: Mapped[ExportStatus] = mapped_column(
+        enum_col(ExportStatus, "export_status"), default=ExportStatus.QUEUED
+    )
+    requested_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    checks_count: Mapped[int | None] = mapped_column(Integer)
+    file_name: Mapped[str | None] = mapped_column(String(80))  # generated; never user-supplied
+    error: Mapped[str | None] = mapped_column(String(300))

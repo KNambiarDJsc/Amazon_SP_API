@@ -172,3 +172,23 @@ def recheck_check(
             event_type="CHECK_RECHECK_REQUESTED",
         )
     dispatch_next(dispatcher, seller_id, window=cfg.seller_max_concurrent_brands)
+
+
+def request_export(dispatcher: Dispatcher, seller_id: uuid.UUID, job_id: uuid.UUID):
+    """Queue a report build. Returns (export id, newly queued?). An export already in flight for
+    the job is reused instead of starting a second one."""
+    from app.services import exports
+
+    with session_scope() as session:
+        job = jobs.get_job(session, seller_id, job_id)
+        export, created = exports.request_export(session, seller_id, job)
+        export_id = export.id
+    if created:
+        try:
+            dispatcher.enqueue_export(export_id)
+        except Exception:
+            with session_scope() as session:
+                session.get(exports.Export, export_id).error = "queue unavailable; try again"
+                session.get(exports.Export, export_id).status = exports.ExportStatus.FAILED
+            raise
+    return export_id, created

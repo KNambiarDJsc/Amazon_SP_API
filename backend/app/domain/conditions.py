@@ -31,3 +31,17 @@ def label_for(condition: str) -> str:
 def condition_from_label(label: str | None) -> str | None:
     """None for the dropdown's placeholder ("Condition"), an empty value, or an unknown label."""
     return _REVERSE.get(" ".join((label or "").split()).casefold())
+
+
+_CONDITION_INDEX = {c: i for i, c in enumerate(CONDITION_LABELS)}
+
+
+def check_seq(brand_position: int, rank: int | None, condition: str) -> int:
+    """A single sortable key for an ASIN check: brand order, then the ASIN's rank within the brand,
+    then condition. Stored on the row so pages come straight off an index instead of sorting the
+    whole job through two joins. Room for 5,000+ brands, 99 ranks and 99 conditions."""
+    return (
+        brand_position * 100_000
+        + (rank if rank is not None else 99) * 100
+        + _CONDITION_INDEX.get(condition, 99)
+    )

@@ -42,6 +42,7 @@ from app.config import Settings
 from app.db import session_scope
 from app.domain.candidates import Evaluated, evaluate, select_representatives
 from app.domain.check_key import SPAPI_RESTRICTIONS_CONTEXT, make_check_key
+from app.domain.conditions import check_seq
 from app.domain.observations import Observation, ObservationContext, utcnow
 from app.enums import (
     BrandStatus,
@@ -50,7 +51,9 @@ from app.enums import (
     JobStatus,
     ObservationOutcome,
 )
+from app.logging_config import log_context
 from app.models import CatalogCandidate, EligibilityCheck, Job, JobBrand, SellerAccount
+from app.observability import BRAND_TASKS, CHECKS_CLASSIFIED, timed_amazon_call
 from app.schemas import JobSettings
 from app.services import audit
 from app.services.brands import complete_brand, compute_brand_summary, dead_letter_brand
@@ -125,13 +128,21 @@ class BrandProcessor:
         ctx = self._claim(brand_id)
         if ctx is None:
             return
+        with log_context(job_id=ctx.job_id, brand_id=ctx.brand_id, seller=str(ctx.seller.id)[:8]):
+            self._process_claimed(ctx)
+
+    def _process_claimed(self, ctx: BrandContext) -> None:
+        brand_id = ctx.brand_id
         try:
             self._run(ctx)
         except _Interrupted as stop:
+            BRAND_TASKS.labels(stop.kind).inc()  # paused | cancelled | lease_lost
             self._on_interrupt(ctx, stop)
         except _Defer as defer:
+            BRAND_TASKS.labels("deferred").inc()
             self._on_defer(ctx, defer)
         except AmazonAuthError as exc:
+            BRAND_TASKS.labels("auth_paused").inc()
             self._on_auth_failure(ctx, exc)
         except _Permanent as exc:
             self._on_permanent(ctx, str(exc))
@@ -257,7 +268,9 @@ class BrandProcessor:
                 self.cfg.rate_search_catalog_burst,
             )
             try:
-                body = client.search_catalog_items(
+                body = timed_amazon_call(
+                    "searchCatalogItems",
+                    client.search_catalog_items,
                     keywords=ctx.display_name,
                     marketplace_id=ctx.seller.marketplace_id,
                     page_token=token,
@@ -339,6 +352,7 @@ class BrandProcessor:
                 )
             )
         )
+        position = s.get(JobBrand, ctx.brand_id).position
         for rank, pick in enumerate(picked, start=1):
             row = by_asin[pick.item.asin]
             row.selected, row.rank = True, rank
@@ -363,6 +377,7 @@ class BrandProcessor:
                         condition=condition,
                         verification_context=SPAPI_RESTRICTIONS_CONTEXT,
                         check_key=key,
+                        seq=check_seq(position, rank, condition),
                     )
                 )
         brand = s.get(JobBrand, ctx.brand_id)
@@ -395,7 +410,8 @@ class BrandProcessor:
                 brand = self._fenced_brand(s, ctx)
                 fresh = s.get(EligibilityCheck, check.id)
                 add_observation(s, fresh, observation)
-                reclassify_check(s, fresh)
+                result = reclassify_check(s, fresh)
+                CHECKS_CLASSIFIED.labels(result.status.value).inc()
                 brand.attempts = 0  # progress was made: only consecutive failures count
 
     def _observe(
@@ -410,7 +426,9 @@ class BrandProcessor:
             brand_validated=True,  # only brand-matched candidates are ever selected for checking
         )
         try:
-            body = client.get_listings_restrictions(
+            body = timed_amazon_call(
+                "getListingsRestrictions",
+                client.get_listings_restrictions,
                 asin=check.asin,
                 seller_id=ctx.seller_ref,
                 marketplace_id=check.marketplace_id,
@@ -472,6 +490,7 @@ class BrandProcessor:
             brand = self._fenced_brand(s, ctx)
             summary = compute_brand_summary(s, brand, ctx.settings)
             complete_brand(s, brand, summary)
+            BRAND_TASKS.labels("completed").inc()
             audit.record(
                 s,
                 seller_account_id=ctx.seller.id,
@@ -595,6 +614,7 @@ class BrandProcessor:
                 queued_at=now,
                 next_attempt_at=now + timedelta(seconds=delay),
             )
+            BRAND_TASKS.labels("retry").inc()
             audit.record(
                 s,
                 seller_account_id=ctx.seller.id,
@@ -615,6 +635,7 @@ class BrandProcessor:
     def _dead_letter(self, s, ctx: BrandContext, reason: str) -> None:
         brand = s.get(JobBrand, ctx.brand_id)
         dead_letter_brand(s, brand, reason=reason, settings=ctx.settings)
+        BRAND_TASKS.labels("dead_lettered").inc()
         audit.record(
             s,
             seller_account_id=ctx.seller.id,

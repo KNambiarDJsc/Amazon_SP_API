@@ -51,3 +51,76 @@ def test_upgrade_matches_models_and_downgrade_removes_everything(clean_db):
     command.downgrade(cfg, "base")
     remaining = set(inspect(clean_db).get_table_names()) - {"alembic_version"}
     assert remaining == set()
+
+
+def test_the_order_key_backfill_gives_existing_rows_the_same_order_new_rows_get(clean_db):
+    """A data migration is only as good as its backfill: build rows under 0004, upgrade, compare."""
+    import uuid
+    from datetime import UTC, datetime
+
+    from sqlalchemy import text
+
+    from app.domain.conditions import check_seq
+
+    cfg = alembic_config()
+    command.upgrade(cfg, "0004")
+    seller, job = uuid.uuid4(), uuid.uuid4()
+    now = datetime.now(UTC)
+    expected: dict[str, int] = {}
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO seller_accounts (id, name, marketplace_id, api_key_hash, api_key_prefix, is_active, created_at) VALUES (:i, 'n', 'M', :h, 'p', true, :n)"
+            ),
+            dict(i=seller, h="h" * 64, n=now),
+        )
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, seller_account_id, status, data_source, settings, ingestion_report, created_at, updated_at) VALUES (:j, :s, 'COMPLETED', 'MOCK', '{}', '{}', :n, :n)"
+            ),
+            dict(j=job, s=seller, n=now),
+        )
+        for position, rank, condition in [
+            (0, 1, "new_new"),
+            (0, 2, "used_good"),
+            (7, 3, "new_new"),
+            (7, 3, "club_club"),
+        ]:
+            brand, cand, check = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+            conn.execute(
+                text(
+                    "INSERT INTO job_brands (id, job_id, seller_account_id, position, original_name, display_name, dedupe_key, status, attempts, checkpoint, created_at) VALUES (:b, :j, :s, :p, 'x', 'x', :d, 'COMPLETED', 0, '{}', :n)"
+                ),
+                dict(b=brand, j=job, s=seller, p=position, d=str(brand), n=now),
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO catalog_candidates (id, job_brand_id, seller_account_id, asin, marketplace_id, brand_match, rank, selected, discovered_at) VALUES (:c, :b, :s, 'B000000000', 'M', 'EXACT', :r, true, :n)"
+                ),
+                dict(c=cand, b=brand, s=seller, r=rank, n=now),
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO eligibility_checks (id, seller_account_id, job_id, job_brand_id, candidate_id, asin, marketplace_id, condition, verification_context, check_key, state, reason_codes, messages, approval_links, verification_methods, attempts, created_at) VALUES (:k, :s, :j, :b, :c, 'B000000000', 'M', :cond, 'v', :key, 'PENDING', '[]', '[]', '[]', '[]', 0, :n)"
+                ),
+                dict(
+                    k=check, s=seller, j=job, b=brand, c=cand, cond=condition, key=str(check), n=now
+                ),
+            )
+            expected[str(check)] = check_seq(position, rank, condition)
+
+    command.upgrade(cfg, "head")
+    with clean_db.connect() as conn:
+        got = {
+            str(r[0]): r[1] for r in conn.execute(text("SELECT id, seq FROM eligibility_checks"))
+        }
+    assert got == expected  # the SQL backfill and the Python rule agree for every row
+    assert sorted(got.values()) == [
+        check_seq(0, 1, "new_new"),
+        check_seq(0, 2, "used_good"),
+        check_seq(7, 3, "new_new"),
+        check_seq(7, 3, "club_club"),
+    ]
+    command.downgrade(cfg, "0004")  # and it reverses cleanly
+    with clean_db.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM eligibility_checks")).scalar() == 4

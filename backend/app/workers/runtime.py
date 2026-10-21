@@ -22,12 +22,19 @@ from app.services.rate_limit import RateLimiter, RedisTokenBucket
 log = logging.getLogger(__name__)
 
 QUEUE = "brand_checks"
+EXPORT_QUEUE = "exports"
 TASK_TIME_LIMIT_MS = 15 * 60 * 1000
 
 
 class DramatiqDispatcher:
-    def __init__(self, actor: dramatiq.Actor):
+    def __init__(self, actor: dramatiq.Actor, export_actor: dramatiq.Actor | None = None):
         self._actor = actor
+        self._export_actor = export_actor
+
+    def enqueue_export(self, export_id: uuid.UUID) -> None:
+        if self._export_actor is None:
+            raise RuntimeError("no export actor registered")
+        self._export_actor.send(str(export_id))
 
     def enqueue_brand(self, brand_id: uuid.UUID, delay_seconds: float = 0.0) -> None:
         options = {"delay": int(delay_seconds * 1000)} if delay_seconds > 0 else {}
@@ -98,7 +105,21 @@ def build_runtime(
         max_retries=0,  # retries are bounded and audited in the database, not by the broker
         time_limit=TASK_TIME_LIMIT_MS,
     )
-    dispatcher = DramatiqDispatcher(actor)
+
+    def build_export(export_id: str) -> None:
+        from app.services.exports import run_export
+
+        run_export(uuid.UUID(export_id), cfg)
+
+    export_actor = dramatiq.actor(
+        build_export,
+        broker=broker,
+        actor_name="build_export",
+        queue_name=EXPORT_QUEUE,
+        max_retries=0,  # a failed export is recorded and can be requested again
+        time_limit=30 * 60 * 1000,
+    )
+    dispatcher = DramatiqDispatcher(actor, export_actor)
     if limiter is None:
         import redis
 

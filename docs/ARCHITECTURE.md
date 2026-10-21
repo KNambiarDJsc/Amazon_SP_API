@@ -139,7 +139,7 @@ resets whenever progress is made, so only *consecutive* failures count.
 | Two workers process one brand | CAS claim | 16 threads, exactly one wins |
 | Slow worker overwrites its successor | Lease fencing | lost-lease test |
 | Seller exceeds its window under concurrency | Per-seller advisory lock | 8 threads × 20 attempts |
-| Last two brands finish together, job never completes | Job-row lock in `maybe_complete_job` | deterministic barrier test |
+| Last two brands finish together, job never completes | Per-job advisory lock (`lock_job_completion`) taken before any row write in the completion path | deterministic barrier test + deadlock regression test |
 | Cross-seller data reference | Composite `(id, seller_account_id)` FKs | model tests |
 | Migration drifts from models | Alembic autogenerate diff must be empty | migration test |
 
@@ -184,18 +184,60 @@ Amazon's *documented* contract (endpoints, parameters, error shapes, reason code
 documentation and reality will only show up on a real account. Treat the first live run accordingly
 (see README).
 
-## 5. Reports
+## 5. Reports and exports
 
-`GET /api/v1/jobs/{id}/export.xlsx` builds four sheets from committed rows at request time. Strings
-beginning `= + - @` (brand names and product titles are attacker-influenced) are forced to text
-cells; a test scans the raw XML for formula elements. Jobs run against the offline mock are labelled
-`MOCK` on every row and in the file properties.
+`GET /api/v1/jobs/{id}/export.xlsx` builds four sheets from committed rows (REPEATABLE READ snapshot,
+column-only loading, ordered by the stored `seq`). Strings beginning `= + - @` (brand names and
+product titles are attacker-influenced) are forced to text cells; a test scans the raw XML for formula
+elements. Jobs run against the offline mock are labelled `MOCK` on every row and in the file properties.
 
-## 6. Security notes (current state)
+Building a workbook is CPU- and memory-bound (about 36 s for 50,000 checks on the benchmark machine), so
+it must not run on an API worker. The synchronous endpoint refuses jobs above `EXPORT_SYNC_MAX_CHECKS`
+(default 10,000) with `409`; larger jobs use `POST /jobs/{id}/exports`, which queues a `build_export`
+Dramatiq message, then `GET .../exports/{id}` to poll and `GET .../exports/{id}/download`. Files live
+in `EXPORT_DIR` (shared volume), are purged after `EXPORT_TTL_HOURS`, and a `RUNNING` export whose worker
+died (`EXPORT_STALE_MINUTES`) is failed by the recovery sweeper instead of hanging forever.
+
+## 6. Performance
+
+`python scripts/perf.py reads|pipeline` (PostgreSQL; Redis for the pipeline). Measured on the
+development container with 50,000 checks seeded for one job:
+
+| Operation | Before | After | What changed |
+|---|---|---|---|
+| Job progress | not profiled | 46 ms | single aggregate query |
+| Checks page (offset 40,000) | 160 ms (first page, redundant joins) | 46 ms | stored `seq` + `ix_checks_job_seq`; two-step query (ids first, then rows) |
+| Checks, status filter | not profiled | 26 ms | `ix_checks_job_status_seq` |
+| Checks, substring search | not profiled | 108 ms | still a scan; fine at this size, trigram index if it grows |
+| Review queue | 1,458 ms (Python-side slicing) | 42 ms | SQL-side pagination |
+| `/metrics` | not profiled | 38 ms | DB-derived gauges are cheap aggregates, cached briefly |
+| Excel export, 50,000 checks | 49.6 s (CPU-bound) | 36 s | column-only loading; moved off the API process (async path) |
+
+Pipeline: 300 brands x 5 ASINs run at roughly 30 checks/s per worker process (79 SQL statements per
+brand). **The SP-API rate limit binds long before orchestration does**: the realistic scenario in
+`scripts/perf.py pipeline` ran at about 101% of the time the rate limits alone impose, so adding workers does not make jobs faster. The only levers are the seller's actual
+SP-API usage plan and checking fewer ASINs per brand (the job's `max_asins_per_brand`, default 5, range 1-10).
+
+## 7. Observability
+
+* `/metrics` (Prometheus; optional bearer token via `METRICS_TOKEN`): HTTP requests/latency, Amazon
+  calls/latency by operation and outcome, brand tasks by outcome, checks classified by status, LWA
+  refreshes, and DB-derived gauges (jobs by status, brands by status, queue depth, oldest queued age).
+  Multi-process mode via `PROMETHEUS_MULTIPROC_DIR`.
+* JSON logs with request/job/brand/check correlation ids; secrets, tokens and authorization headers are
+  redacted by a logging filter (tested).
+* Optional OpenTelemetry tracing (`pip install .[telemetry]`, standard `OTEL_*` variables). The
+  SQLAlchemy instrumentation is skipped with a warning on SQLAlchemy 2.1.
+
+## 8. Security notes (current state)
 
 * API keys: 256-bit random, shown once, stored as SHA-256. Cross-seller access is a 404, never 403.
 * Uploads: size limit, zip-bomb check before parsing, formulas never evaluated, row/column caps.
 * Search parameters are escaped (`%`/`_` are literal).
 * Amazon credentials: encrypted at rest, bound to the seller, never exposed (section 4).
-* **Not yet built (Phase 4–5):** TLS/reverse proxy, request-size and API rate limits, user login,
-  security headers, backups, secret management beyond environment variables.
+* HTTP hardening: security headers, request body cap (413 as soon as the declared or streamed size
+  exceeds it), per-key API rate limiting, authentication-failure throttling per client address (both
+  fail open if Redis is down, because a limiter outage must not become an API outage), API docs disabled
+  when `ENVIRONMENT=production`.
+* **Still not built:** user login/SSO (the dashboard uses the seller API key), key rotation UI, audit
+  log export, secret-manager integration beyond environment variables.

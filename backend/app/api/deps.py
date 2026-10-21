@@ -33,12 +33,68 @@ def dispatcher_dep(request: Request) -> Dispatcher:
     return get_runtime().dispatcher
 
 
+class AllowAll:
+    """Rate limiting switched off."""
+
+    def acquire(self, key, *, rate, burst, max_wait):
+        from app.services.rate_limit import RateDecision
+
+        return RateDecision(True, 0.0)
+
+
+class FailOpenLimiter:
+    """Wraps a shared limiter so a Redis outage degrades to "no limiting", not to an outage."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def acquire(self, key, *, rate, burst, max_wait):
+        from app.services.rate_limit import RateDecision
+
+        try:
+            return self._inner.acquire(key, rate=rate, burst=burst, max_wait=max_wait)
+        except Exception:
+            return RateDecision(True, 0.0)
+
+
+def build_limiter(cfg: Settings):
+    from app.services.rate_limit import InMemoryTokenBucket, RedisTokenBucket
+
+    if not cfg.api_rate_limit_enabled:
+        return AllowAll()
+    if cfg.environment == "production":
+        import redis
+
+        return FailOpenLimiter(RedisTokenBucket(redis.Redis.from_url(cfg.redis_url), prefix="api:"))
+    return InMemoryTokenBucket()
+
+
 def current_seller(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Annotated[Session, Depends(db_dep)],
+    cfg: Annotated[Settings, Depends(settings_dep)],
 ) -> SellerAccount:
     account = authenticate(db, credentials.credentials) if credentials else None
     if account is None:
+        # Slow down anyone guessing keys: failures spend tokens from a small per-IP bucket;
+        # successful requests never touch it, so legitimate users are unaffected.
+        ip = request.client.host if request.client else "unknown"
+        from app.api.security import safe_acquire
+
+        decision = safe_acquire(
+            request.app.state.limiter,
+            f"authfail:{ip}",
+            rate=1.0 / cfg.auth_failure_refill_seconds,
+            burst=cfg.auth_failure_burst,
+            max_wait=0.0,
+        )
+        if not decision.granted:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Too many failed authentication attempts.",
+                headers={"Retry-After": str(max(1, int(decision.wait + 0.999)))},
+            )
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "Missing or invalid API key.",

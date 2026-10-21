@@ -17,11 +17,19 @@ dependencies = [
   "openpyxl>=3.1",
   "python-multipart>=0.0.9",
   "cryptography>=42",
+  "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
-dev = ["pytest>=8", "ruff>=0.5"]
+telemetry = [
+  "opentelemetry-sdk>=1.25",
+  "opentelemetry-exporter-otlp-proto-http>=1.25",
+  "opentelemetry-instrumentation-fastapi>=0.46b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.46b0",
+  "opentelemetry-instrumentation-httpx>=0.46b0",
+]
+dev = ["pytest>=8", "ruff>=0.5", "pip-audit>=2.7"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -49,3 +57,5 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/fake_sellercentral.py" = ["E501"]  # embedded HTML/JS fixture
+"backend/tests/test_migrations.py" = ["E501"]  # embedded SQL fixtures
+"scripts/*.py" = ["E501"]  # benchmark tables read better wide

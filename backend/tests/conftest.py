@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import db as app_db
 from app.models import Base, SellerAccount
 
+# Rate limiting is covered by its own tests; shared test processes must not trip it.
+os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
+
 FIXTURES = Path(__file__).parent / "fixtures"
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "sqlite://")
 IS_POSTGRES = TEST_DATABASE_URL.startswith("postgresql")
