@@ -122,6 +122,7 @@ class JobBrand(Base):
         UniqueConstraint("job_id", "dedupe_key", name="uq_job_brands_job_dedupe"),
         Index("ix_job_brands_job_status", "job_id", "status"),
         Index("ix_job_brands_status_lease", "status", "lease_expires_at"),
+        Index("ix_job_brands_seller_status", "seller_account_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -136,6 +137,7 @@ class JobBrand(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    queued_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     lease_owner: Mapped[str | None] = mapped_column(String(100))
     lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     last_error: Mapped[str | None] = mapped_column(Text)

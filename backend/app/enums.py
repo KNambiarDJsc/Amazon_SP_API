@@ -36,8 +36,9 @@ class JobStatus(StrEnum):
 class BrandStatus(StrEnum):
     """Execution state of one brand-check unit (not its eligibility outcome)."""
 
-    PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
+    PENDING = "PENDING"  # waiting for a free slot in the seller's concurrency window
+    QUEUED = "QUEUED"  # a task message has been sent; the database row stays the source of truth
+    IN_PROGRESS = "IN_PROGRESS"  # leased by a worker
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"  # retries exhausted: dead-lettered into the manual-review path
     CANCELLED = "CANCELLED"

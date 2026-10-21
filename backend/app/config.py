@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     rate_restrictions_burst: int = 10
     max_rate_wait_seconds: float = 3.0  # longer waits defer the brand instead of blocking a worker
 
-    seller_max_concurrent_brands: int = 2
+    seller_max_concurrent_brands: int = 2  # in-flight brand tasks per seller, across all their jobs
 
     brand_lease_seconds: int = 300
-    max_brand_attempts: int = 5
+    queue_stale_seconds: int = (
+        900  # a QUEUED brand older than this is presumed to have lost its message
+    )
+    max_brand_attempts: int = 5  # consecutive failures with no progress before dead-lettering
+    max_check_attempts: int = 3  # transient failures on one ASIN before it goes to manual review
+    max_throttle_deferrals: int = 30
     backoff_base_seconds: float = 5.0
     backoff_cap_seconds: float = 300.0
 

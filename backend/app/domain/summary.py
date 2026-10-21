@@ -44,6 +44,7 @@ def summarize_brand(
     checks_planned: int,
     min_sample: int,
     exhaustive: bool,
+    discovery_complete: bool = True,
 ) -> BrandSummary:
     """`exhaustive` means every brand-matched ASIN Amazon returned was checked and the
     catalog search was not cut short by a page limit."""
@@ -67,6 +68,13 @@ def summarize_brand(
             listable_asins=listable,
         )
 
+    if not discovery_complete:
+        # Never claim "no product found" (or anything else) from a search that did not finish.
+        return build(
+            EligibilityStatus.NEEDS_MANUAL_CHECK,
+            "BRAND_DISCOVERY_INCOMPLETE",
+            "Catalog discovery did not finish, so the brand's products are not fully known.",
+        )
     if candidates_brand_matched == 0:
         return build(
             EligibilityStatus.NO_PRODUCT_FOUND,

@@ -49,3 +49,13 @@ def seller(session) -> SellerAccount:
 @pytest.fixture
 def now():
     return datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def make_harness(seller):
+    from harness import Harness
+
+    def factory(client, **overrides):
+        return Harness(seller, client, **overrides)
+
+    return factory

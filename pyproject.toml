@@ -34,6 +34,7 @@ include = ["app*"]
 testpaths = ["backend/tests"]
 pythonpath = ["backend"]
 addopts = "-q"
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
 
 [tool.ruff]
 line-length = 100

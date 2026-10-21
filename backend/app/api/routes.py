@@ -1,0 +1,271 @@
+import json
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from pydantic import ValidationError
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.api.deps import current_seller, db_dep, dispatcher_dep, settings_dep
+from app.config import Settings
+from app.enums import BrandStatus, CheckState, DataSource, EligibilityStatus
+from app.models import SellerAccount
+from app.schemas import (
+    BrandOut,
+    CandidateOut,
+    CheckDetailOut,
+    CheckOut,
+    ErrorOut,
+    JobCreateRequest,
+    JobOut,
+    JobSettings,
+    Page,
+)
+from app.services import orchestration, views
+from app.services.dispatch import Dispatcher
+from app.services.ingestion import (
+    IngestionError,
+    IngestionResult,
+    ingest,
+    rows_from_list,
+    rows_from_upload,
+)
+from app.services.jobs import JobNotFound, JobStateError, get_job
+from app.services.reporting import build_workbook
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+router = APIRouter(prefix="/api/v1")
+NOT_FOUND = {404: {"model": ErrorOut}}
+
+Seller = Annotated[SellerAccount, Depends(current_seller)]
+Db = Annotated[Session, Depends(db_dep)]
+Cfg = Annotated[Settings, Depends(settings_dep)]
+Dispatch = Annotated[Dispatcher, Depends(dispatcher_dep)]
+Limit = Annotated[int, Query(ge=1, le=500)]
+Offset = Annotated[int, Query(ge=0)]
+
+
+def _data_source(cfg: Settings) -> DataSource:
+    return DataSource.MOCK if cfg.amazon_mode == "mock" else DataSource.LIVE
+
+
+def _owned_job(db: Session, seller: SellerAccount, job_id: uuid.UUID):
+    try:
+        return get_job(db, seller.id, job_id)
+    except JobNotFound:
+        raise HTTPException(404, "Job not found.") from None
+
+
+def _submit(
+    cfg: Settings,
+    dispatcher: Dispatcher,
+    db: Session,
+    seller: SellerAccount,
+    ingestion: IngestionResult,
+    *,
+    name: str | None,
+    settings: JobSettings,
+    filename: str | None = None,
+) -> JobOut:
+    job_id = orchestration.submit_job(
+        dispatcher,
+        cfg,
+        seller.id,
+        ingestion=ingestion,
+        name=name,
+        settings=settings,
+        data_source=_data_source(cfg),
+        source_filename=filename,
+    )
+    db.expire_all()
+    return views.job_out(db, _owned_job(db, seller, job_id))
+
+
+@router.get("/me")
+def me(seller: Seller, cfg: Cfg):
+    return {
+        "name": seller.name,
+        "marketplace_id": seller.marketplace_id,
+        "amazon_mode": cfg.amazon_mode,
+        "connected_to_amazon": bool(seller.amazon_seller_id),
+    }
+
+
+@router.post("/jobs", response_model=JobOut, status_code=201)
+def create_job(
+    body: JobCreateRequest, seller: Seller, db: Db, cfg: Cfg, dispatcher: Dispatch
+) -> JobOut:
+    try:
+        ingestion = ingest(
+            rows_from_list(body.brands),
+            max_brands=cfg.max_brands_per_job,
+            max_length=cfg.max_brand_length,
+        )
+    except IngestionError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return _submit(cfg, dispatcher, db, seller, ingestion, name=body.name, settings=body.settings)
+
+
+@router.post("/jobs/upload", response_model=JobOut, status_code=201)
+def create_job_from_upload(
+    seller: Seller,
+    db: Db,
+    cfg: Cfg,
+    dispatcher: Dispatch,
+    file: Annotated[UploadFile, File(description=".xlsx or .csv with a Brand column")],
+    name: Annotated[str | None, Form(max_length=200)] = None,
+    settings: Annotated[str | None, Form(description="JobSettings as JSON")] = None,
+) -> JobOut:
+    try:
+        job_settings = (
+            JobSettings.model_validate(json.loads(settings)) if settings else JobSettings()
+        )
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(422, f"Invalid settings: {exc}") from None
+    data = file.file.read(cfg.max_upload_bytes + 1)  # never buffer more than the limit allows
+    try:
+        ingestion = ingest(
+            rows_from_upload(file.filename, data, max_bytes=cfg.max_upload_bytes),
+            max_brands=cfg.max_brands_per_job,
+            max_length=cfg.max_brand_length,
+        )
+    except IngestionError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return _submit(
+        cfg,
+        dispatcher,
+        db,
+        seller,
+        ingestion,
+        name=name or file.filename,
+        settings=job_settings,
+        filename=file.filename,
+    )
+
+
+@router.get("/jobs", response_model=Page[JobOut])
+def list_jobs(seller: Seller, db: Db, limit: Limit = 25, offset: Offset = 0):
+    return views.list_jobs(db, seller.id, limit, offset)
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut, responses=NOT_FOUND)
+def read_job(job_id: uuid.UUID, seller: Seller, db: Db):
+    return views.job_out(db, _owned_job(db, seller, job_id))
+
+
+def _transition(action, seller: SellerAccount, job_id: uuid.UUID, db: Session) -> JobOut:
+    _owned_job(db, seller, job_id)
+    try:
+        action()
+    except JobStateError as exc:
+        raise HTTPException(409, str(exc)) from None
+    db.expire_all()
+    return views.job_out(db, _owned_job(db, seller, job_id))
+
+
+@router.post("/jobs/{job_id}/pause", response_model=JobOut, responses=NOT_FOUND)
+def pause_job(job_id: uuid.UUID, seller: Seller, db: Db):
+    return _transition(lambda: orchestration.pause(seller.id, job_id), seller, job_id, db)
+
+
+@router.post("/jobs/{job_id}/resume", response_model=JobOut, responses=NOT_FOUND)
+def resume_job(job_id: uuid.UUID, seller: Seller, db: Db, cfg: Cfg, dispatcher: Dispatch):
+    return _transition(
+        lambda: orchestration.resume(dispatcher, cfg, seller.id, job_id), seller, job_id, db
+    )
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobOut, responses=NOT_FOUND)
+def cancel_job(job_id: uuid.UUID, seller: Seller, db: Db):
+    return _transition(lambda: orchestration.cancel(seller.id, job_id), seller, job_id, db)
+
+
+@router.get("/jobs/{job_id}/brands", response_model=Page[BrandOut], responses=NOT_FOUND)
+def list_brands(
+    job_id: uuid.UUID,
+    seller: Seller,
+    db: Db,
+    status: BrandStatus | None = None,
+    brand_status: EligibilityStatus | None = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+):
+    _owned_job(db, seller, job_id)
+    return views.list_brands(
+        db, job_id, status=status, brand_status=brand_status, q=q, limit=limit, offset=offset
+    )
+
+
+@router.get(
+    "/jobs/{job_id}/brands/{brand_id}/candidates",
+    response_model=list[CandidateOut],
+    responses=NOT_FOUND,
+)
+def list_candidates(job_id: uuid.UUID, brand_id: uuid.UUID, seller: Seller, db: Db):
+    _owned_job(db, seller, job_id)
+    try:
+        return views.list_candidates(db, job_id, brand_id)
+    except JobNotFound:
+        raise HTTPException(404, "Brand not found.") from None
+
+
+@router.get("/jobs/{job_id}/checks", response_model=Page[CheckOut], responses=NOT_FOUND)
+def list_checks(
+    job_id: uuid.UUID,
+    seller: Seller,
+    db: Db,
+    status: EligibilityStatus | None = None,
+    state: CheckState | None = None,
+    brand_id: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+):
+    _owned_job(db, seller, job_id)
+    return views.list_checks(
+        db, job_id, status=status, state=state, brand_id=brand_id, q=q, limit=limit, offset=offset
+    )
+
+
+@router.get("/jobs/{job_id}/checks/{check_id}", response_model=CheckDetailOut, responses=NOT_FOUND)
+def read_check(job_id: uuid.UUID, check_id: uuid.UUID, seller: Seller, db: Db):
+    _owned_job(db, seller, job_id)
+    try:
+        return views.check_detail(db, job_id, check_id)
+    except JobNotFound:
+        raise HTTPException(404, "Check not found.") from None
+
+
+@router.get("/jobs/{job_id}/events", responses=NOT_FOUND)
+def read_events(job_id: uuid.UUID, seller: Seller, db: Db, limit: Limit = 100):
+    _owned_job(db, seller, job_id)
+    return views.list_events(db, job_id, limit)
+
+
+@router.get("/jobs/{job_id}/export.xlsx", responses={**NOT_FOUND, 200: {"content": {XLSX: {}}}})
+def export_job(job_id: uuid.UUID, seller: Seller, db: Db):
+    job = _owned_job(db, seller, job_id)
+    return Response(
+        build_workbook(db, job),
+        media_type=XLSX,
+        headers={
+            "Content-Disposition": f'attachment; filename="eligibility-{str(job_id)[:8]}.xlsx"'
+        },
+    )
+
+
+health = APIRouter()
+
+
+@health.get("/healthz", include_in_schema=False)
+def healthz():
+    return {"status": "ok"}
+
+
+@health.get("/readyz", include_in_schema=False)
+def readyz(db: Db):
+    db.execute(text("SELECT 1"))
+    return {"status": "ready"}

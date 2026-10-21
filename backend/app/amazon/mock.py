@@ -13,10 +13,9 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from app.amazon.errors import AmazonError
 from app.enums import MARKETPLACE_ID_IN, DataSource
 
-Behaviour = Any  # Mapping | AmazonError | Sequence[Behaviour] | Callable[[int], Behaviour]
+Behaviour = Any  # Mapping | BaseException | Sequence[Behaviour] | Callable[[int], Behaviour]
 
 APPROVAL_LINK = {
     "resource": "https://sellercentral.amazon.in/hz/approvalrequest/restrictions/approve?asin={asin}",
@@ -121,11 +120,11 @@ class MockAmazonClient:
     def _resolve(self, behaviour: Behaviour, key: Any) -> Any:
         n = self._counts[key]
         self._counts[key] += 1
-        if callable(behaviour) and not isinstance(behaviour, (Mapping, AmazonError)):
+        if callable(behaviour) and not isinstance(behaviour, (Mapping, BaseException)):
             behaviour = behaviour(n)
         if isinstance(behaviour, list):
             behaviour = behaviour[min(n, len(behaviour) - 1)]
-        if isinstance(behaviour, AmazonError):
+        if isinstance(behaviour, BaseException):
             raise behaviour
         return behaviour
 
